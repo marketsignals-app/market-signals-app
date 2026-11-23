@@ -20,13 +20,16 @@ def mover(symbol="DOLATALGO.NS"):
 
 
 class FakeTelegram:
-    def __init__(self, fail_after=None):
-        self.sent, self.fail_after = [], fail_after
+    def __init__(self, fail_after=None, refuse_replies=False):
+        self.sent, self.replies, self.fail_after, self.refuse_replies = [], [], fail_after, refuse_replies
 
-    def __call__(self, text):
+    def __call__(self, text, reply_to=None):
         if self.fail_after is not None and len(self.sent) >= self.fail_after:
             return False, None
+        if reply_to and self.refuse_replies:
+            return False, None
         self.sent.append(text)
+        self.replies.append(reply_to)
         return True, 1000 + len(self.sent)
 
 
@@ -198,6 +201,74 @@ class VolatilityBreachTests(unittest.TestCase):
         self.assertIn("1. ", text)
         self.assertIn("#VolatilityBreach", text)
         self.assertEqual(feeds.feed_for(items[0]), "volatility")
+
+
+class BreachMessageTests(unittest.TestCase):
+    def breach(self, symbol="A.NS"):
+        records = [{"symbol": symbol, "name": symbol.split(".")[0], "sector": "Banks", "indicators": {"atr": 10.0}}]
+        items, _ = fi.volatility_breach_items(records, {symbol: {"price": 1025.0, "change_pct": 2.5, "state": "REGULAR"}}, True, {}, TS, "2026-11-23")
+        return items[0]
+
+    def started(self, **extra):
+        return {"feeds_sent": {"volatility": feeds.slot_of(TABLE["volatility"], NOW)}, "feed_queue": [], **extra}
+
+    def test_a_breach_is_sent_on_its_own_at_once_not_held_for_the_slot(self):
+        send = FakeTelegram()
+        state, _, _ = dispatch([self.breach()], self.started(), send)
+        self.assertEqual(len(send.sent), 1)
+        self.assertIn("Volatility breach", send.sent[0])
+        self.assertEqual(send.replies, [None], "no earlier reading alert, so a normal message")
+        self.assertEqual(state["feed_queue"], [])
+
+    def test_it_replies_under_the_reading_alert_of_the_stock_and_names_it(self):
+        send = FakeTelegram()
+        announced = {"A.NS": {"id": 777, "ts": TS - 86400, "side": "buy", "horizon": "short", "date": "2026-11-22"}}
+        dispatch([self.breach()], self.started(announced=announced), send)
+        self.assertEqual(send.replies, [777])
+        self.assertIn("Earlier reading alert: bullish", send.sent[0])
+
+    def test_an_old_reading_alert_is_not_replied_to(self):
+        send = FakeTelegram()
+        announced = {"A.NS": {"id": 777, "ts": TS - 60 * 86400, "side": "buy", "horizon": "short", "date": "2026-09-01"}}
+        state, _, _ = dispatch([self.breach()], self.started(announced=announced), send)
+        self.assertEqual(send.replies, [None])
+        self.assertNotIn("A.NS", state["announced"], "stale entries are dropped")
+
+    def test_when_telegram_refuses_the_reply_it_is_sent_as_a_normal_message(self):
+        send = FakeTelegram(refuse_replies=True)
+        announced = {"A.NS": {"id": 777, "ts": TS - 3600, "side": "sell", "horizon": "long", "date": "2026-11-23"}}
+        dispatch([self.breach()], self.started(announced=announced), send)
+        self.assertEqual(send.replies, [None])
+        self.assertEqual(len(send.sent), 1)
+
+    def test_only_five_go_out_one_by_one_and_the_rest_wait_for_the_feed(self):
+        send = FakeTelegram()
+        items = [self.breach(f"S{i}.NS") for i in range(8)]
+        state, _, _ = dispatch(items, self.started(), send)
+        self.assertEqual(len(send.sent), feed_run.BREACHES_PER_RUN)
+        self.assertEqual([q["feed"] for q in state["feed_queue"]], ["volatility"] * 3)
+
+    def test_a_failed_send_puts_the_breach_back_for_the_next_slot(self):
+        send = FakeTelegram(fail_after=0)
+        state, _, _ = dispatch([self.breach()], self.started(), send)
+        self.assertEqual([q["feed"] for q in state["feed_queue"]], ["volatility"])
+
+    def test_the_first_run_holds_breaches_instead_of_sending(self):
+        send = FakeTelegram()
+        state, _, _ = dispatch([self.breach()], {}, send)
+        self.assertEqual(send.sent, [])
+        self.assertEqual(len(state["feed_queue"]), 1)
+
+    def test_a_sent_reading_is_remembered_so_a_later_breach_can_reply_to_it(self):
+        send = FakeTelegram()
+        record = {"symbol": "A.NS", "name": "A", "price": 100.0, "currency": "INR", "short": {"label": "Buy", "score": 60, "reasons": []}, "indicators": {"atr": 2.0, "hi252": 130, "lo252": 70},
+                  "levels": {"zones": []}}
+        state = {"feeds_sent": {"readings": "x"}, "feed_queue": feeds.enqueue([], [("readings", signal("A.NS"))], TS)}
+        state, _, _ = dispatch([], state, send, {"A.NS": record}, now=NOW + timedelta(minutes=1))
+        self.assertEqual(state["announced"]["A.NS"]["id"], 1001)
+        send2 = FakeTelegram()
+        dispatch([self.breach()], {**state, "feeds_sent": {"volatility": feeds.slot_of(TABLE["volatility"], NOW)}}, send2)
+        self.assertEqual(send2.replies, [1001])
 
 
 class DispatchTests(unittest.TestCase):

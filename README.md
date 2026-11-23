@@ -276,7 +276,7 @@ the run in `engine/feed_run.py`). Times are IST, weekdays. The app's own alert l
 | Sector growth | 90 min | 09:15 to 15:30 | every slot: strongest and weakest sectors of our list, with the stock count behind each |
 | Movers | 30 min | market hours | only if new |
 | Bullish and bearish readings | 15 min | market hours | only if new; a reading that reversed while waiting is dropped |
-| Volatility breaches | 15 min | market hours | only if new: a stock of the main list whose move today is at least 2x its own 14-day average daily range (ATR), again at 3x; stocks with untrusted data are skipped |
+| Volatility breaches | at once | market hours | each breach is sent on its own at the next run (up to 5 per run; any more wait for a 15-minute batch): a stock of the main list whose move today is at least 2x its own 14-day average daily range (ATR), again at 3x; it replies under the stock's reading alert when that was announced within 45 days; stocks with untrusted data are skipped |
 | IPO breakouts | 30 min | market hours | only if new (price crossing the listing-day high or low) |
 | Block deals | 15 min | market hours | only if new |
 | Bulk deals | daily | from 18:00 (retried for 4 hours until the NSE publishes them) | the day's largest, with the client as the NSE publishes it |

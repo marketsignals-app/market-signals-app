@@ -18,7 +18,7 @@ SECTION_OF = {"signal": digest.READINGS_TITLE, "deal": digest.DEALS_TITLE, "move
               "brief": digest.BRIEF_TITLE, "news": digest.NEWS_TITLE, "bulk": "━━ BULK DEALS ━━", "filing": "━━ IMPORTANT FILINGS ━━"}
 ICONS = {"readings": "\U0001F7E2", "movers": "\U0001F4C8", "ipo_breakout": "\U0001F680", "deals": "\U0001F9F1", "filings": "\U0001F4D1", "news": "\U0001F4F0", "indexes": "\U0001F4CA",
          "commodities": "\U0001F6E2", "sectors": "\U0001F9ED", "news_digest": "\U0001F5DE", "ipo_upcoming": "\U0001F4C5", "events_today": "\U0001F5D3", "weekly": "\U0001F4C6",
-         "urgent": "⚠️"}
+         "bulk_deals": "📦", "volatility": "⚡", "urgent": "⚠️"}
 
 
 def tag_line(tags):

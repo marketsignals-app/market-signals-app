@@ -912,7 +912,7 @@ def run(args):
         sources = {"indices": indices, "india_open": "IN" in open_now, "watch": (overview or {}).get("watch"), "sectors": (conditions.get("IN") or {}).get("sectors"),
                    "news_dashboard": news_dash, "ipos": ipos.get("india") if ipos.get("india_ok") else [], "events": events_data["items"], "track_record": prev_data.get("track_record"),
                    "learning": prev_data.get("learning"), "health": prev_data.get("data_health"), "bulk_payload": bulk_payload, "today_label": today_label, "names": names}
-        send_one = (lambda text: send_formatted(token, chat, text)) if token and chat else None
+        send_one = (lambda text, reply_to=None: send_formatted(token, chat, text, reply_to)) if token and chat else None
         feed_state, calls, _sent = feed_run.dispatch(items + extra, state, now, now_ts, feeds.settings(alert_cfg), sources, by_record, send_one, link_of, today_ist)
         if not (token and chat) and lines:
             print("New alerts are in the app. Telegram is not set up (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID).")
