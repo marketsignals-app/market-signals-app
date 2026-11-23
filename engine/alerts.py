@@ -456,9 +456,10 @@ def send_telegram(token, chat_id, text):
 
 def outcome_table(price, exit_price, move, days):
     """The numbers of a target or stop reply as a small aligned table."""
-    cells = [["Alerted", "Now", "Move", "Days"], [f"{price:,.2f}", f"{exit_price:,.2f}", f"{move:+.1f}%", str(days)]]
+    fmt = lambda v: f"{v:,.2f}" if abs(v) < 1000 else f"{v:,.1f}"            # one decimal above 1,000 keeps the table narrow
+    cells = [["Alerted", "Now", "Move", "Days"], [fmt(price), fmt(exit_price), f"{move:+.1f}%", str(days)]]
     widths = [max(len(row[c]) for row in cells) for c in range(4)]
-    return chr(10).join("  ".join(value.rjust(widths[c]) for c, value in enumerate(row)) for row in cells)
+    return chr(10).join(" ".join(value.rjust(widths[c]) for c, value in enumerate(row)) for row in cells)
 
 
 def format_outcome(call, outcome, link=None, markup=False):

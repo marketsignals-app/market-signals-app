@@ -13,9 +13,9 @@ from datetime import date, datetime, timedelta, timezone
 IST = timezone(timedelta(hours=5, minutes=30))
 SUFFIXES = (".NS", ".BO")
 STALE_DAYS = 2
-INDEX_NAMES = {"NIFTY 50": "Nifty 50", "NIFTY NEXT 50": "Nifty Next 50", "NIFTY BANK": "Bank Nifty", "NIFTY IT": "Nifty IT", "NIFTY AUTO": "Nifty Auto",
-               "NIFTY FMCG": "Nifty FMCG", "NIFTY PHARMA": "Nifty Pharma", "NIFTY METAL": "Nifty Metal", "NIFTY ENERGY": "Nifty Energy", "NIFTY REALTY": "Nifty Realty",
-               "NIFTY FIN SERVICE": "Nifty Financials", "NIFTY MIDCAP 100": "Nifty Midcap 100", "NIFTY SMLCAP 100": "Nifty Smallcap 100", "NIFTY 500": "Nifty 500",
+INDEX_NAMES = {"NIFTY 50": "Nifty 50", "NIFTY NEXT 50": "Next 50", "NIFTY BANK": "Bank Nifty", "NIFTY IT": "IT", "NIFTY AUTO": "Auto",
+               "NIFTY FMCG": "FMCG", "NIFTY PHARMA": "Pharma", "NIFTY METAL": "Metal", "NIFTY ENERGY": "Energy", "NIFTY REALTY": "Realty",
+               "NIFTY FIN SERVICE": "Financials", "NIFTY MIDCAP 100": "Midcap 100", "NIFTY SMLCAP 100": "Smallcap 100", "NIFTY 500": "Nifty 500",
                "INDIA VIX": "India VIX"}
 MIN_FILING_IMPACT = 70
 ROUTINE_EVENTS = {"routine", "investor_call", "volume"}
@@ -73,28 +73,28 @@ def _signed(value, digits=2):
 
 # ---------- style C: tables ----------
 def indexes_table(indices, now, names=INDEX_NAMES):
-    """The Indexes feed: the Indian indexes the NSE feed carries, with the day move and a 52-week note. None when the feed has none of them."""
-    rows = []
+    """The Indexes feed: the Indian indexes the NSE feed carries, with the day move; indexes at a 52-week high or low are named under the table. None when the feed has none of them."""
+    rows, highs, lows = [], [], []
     for key, label in names.items():
         row = (indices or {}).get(key)
         if not row or not isinstance(row.get("last"), (int, float)):
             continue
-        note = ""
         if row.get("high52") and row["last"] >= row["high52"] * 0.999:
-            note = "52w high"
+            highs.append(label)
         elif row.get("low52") and row["last"] <= row["low52"] / 0.999:
-            note = "52w low"
-        rows.append([label, f"{row['last']:,.2f}", _signed(row.get("pct")), note])
+            lows.append(label)
+        rows.append([label, f"{row['last']:,.2f}", _signed(row.get("pct"))])
     if not rows:
         return None
-    return {"kind": "table", "feed": "indexes", "title": "INDEXES", "header": ["Index", "Level", "Day", ""], "rows": rows,
+    notes = ([f"At a 52-week high: {', '.join(highs)}"] if highs else []) + ([f"At a 52-week low: {', '.join(lows)}"] if lows else [])
+    return {"kind": "table", "feed": "indexes", "title": "INDEXES", "header": ["Index", "Level", "Day"], "rows": rows, "notes": notes,
             "source": f"NSE all-indices feed, read {_stamp(now)}", "tags": tags("#Indexes", "#Nifty50", "#BankNifty", "#IndiaVIX" if "INDIA VIX" in indices else None)}
 
 
 def commodities_table(watch, now):
-    """The Commodities feed: crude oil, gold and the rupee from the app's market watch, each with the date of its last data and a stale mark when it is old."""
+    """The Commodities feed: crude oil, gold and the rupee from the app's market watch. Each figure's data date is listed under the table, with STALE when it is old."""
     today = now.astimezone(IST).date()
-    rows, labels = [], []
+    rows, labels, dates = [], [], []
     for w in watch or []:
         if w.get("kind") not in ("commodity", "currency") or not isinstance(w.get("price"), (int, float)):
             continue
@@ -104,27 +104,35 @@ def commodities_table(watch, now):
             age = (today - date.fromisoformat(w.get("as_of"))).days
         except (TypeError, ValueError):
             pass
-        note = f"data {_pretty_date(w.get('as_of'))}" + (" STALE" if age is not None and age > STALE_DAYS else "")
-        rows.append([w["name"], f"{prefix}{w['price']:,.2f}", _signed(w.get("change_pct")), note])
+        rows.append([w["name"], f"{prefix}{w['price']:,.2f}", _signed(w.get("change_pct"))])
         labels.append(w["name"])
+        dates.append(f"{w['name']} {_pretty_date(w.get('as_of'))}{' STALE' if age is not None and age > STALE_DAYS else ''}")
     if not rows:
         return None
-    return {"kind": "table", "feed": "commodities", "title": "COMMODITIES", "header": ["", "Price", "Day", ""], "rows": rows,
+    return {"kind": "table", "feed": "commodities", "title": "COMMODITIES", "header": ["", "Price", "Day"], "rows": rows, "notes": ["Data dates: " + ", ".join(dates)],
             "source": "Yahoo Finance, delayed; no second source. Data older than 2 days is marked STALE", "tags": tags("#Commodities", *labels)}
 
 
+SECTOR_SHORT = {"Metals and Mining": "Metals", "Pharma and Health": "Pharma", "Real Estate": "Realty", "Financials": "Financials", "Industrials": "Industrials", "Materials": "Materials",
+                "New listings": "New listings"}
+
+
 def sectors_table(sectors, now, count=3):
-    """The Sector feed: the strongest and weakest sectors today (average move of the stocks of our list in each), with the number of stocks behind each figure."""
+    """The Sector feed: the strongest and weakest sectors today (average move of the stocks of our list in each), with the number of stocks behind each figure in a second table."""
     rated = [s for s in sectors or [] if isinstance(s.get("d1"), (int, float)) and (s.get("n") or 0) >= 3]
     if len(rated) < 2:
         return None
     ordered = sorted(rated, key=lambda s: -s["d1"])
     top, bottom = ordered[:count], [s for s in ordered[::-1][:count] if s not in ordered[:count]]
-    rows = [[s["sector"], _signed(s["d1"]), _signed(s.get("d5"), 1), str(s.get("n"))] for s in top]
+    name = lambda x: SECTOR_SHORT.get(x["sector"], x["sector"])[:12]
+    rows = [[name(s), _signed(s["d1"]), _signed(s.get("d5"), 1)] for s in top]
+    counts = [[name(s), str(s.get("n"))] for s in top]
     if bottom:
-        rows.append(["-", "-", "-", "-"])
-        rows += [[s["sector"], _signed(s["d1"]), _signed(s.get("d5"), 1), str(s.get("n"))] for s in bottom]
-    return {"kind": "table", "feed": "sectors", "title": "SECTOR GROWTH", "header": ["Sector", "Today", "5 days", "Stocks"], "rows": rows,
+        rows.append(["-", "-", "-"])
+        counts.append(["-", "-"])
+        rows += [[name(s), _signed(s["d1"]), _signed(s.get("d5"), 1)] for s in bottom]
+        counts += [[name(s), str(s.get("n"))] for s in bottom]
+    return {"kind": "table", "feed": "sectors", "title": "SECTOR GROWTH", "header": ["Sector", "Today", "5 days"], "rows": rows, "more": [{"header": ["Sector", "Stocks"], "rows": counts}],
             "source": f"average move of the stocks of our list in each sector, {_stamp(now)}", "tags": tags("#Sectors", *[s["sector"] for s in top + bottom])}
 
 
@@ -233,9 +241,9 @@ def weekly_entries(track_record, learning_summary, health):
         if n:
             points.append(f"Reached target {overall.get('target_pct')}% · hit the risk level {overall.get('stop_pct')}% · expired {overall.get('expired_pct')}%")
             points.append("Fewer than %s settled calls: too few to read a rate from" % track_record.get("min_sample") if not overall.get("reliable") else "Enough settled calls to read a rate, with its range on the Record tab")
-        kv = [["Settled calls", str(n)], ["Still open", str(track_record.get("open", 0))], ["Voided (price never traded)", str(track_record.get("void", 0))]]
+        kv = [["Settled calls", str(n)], ["Still open", str(track_record.get("open", 0))], ["Voided", str(track_record.get("void", 0))]]
         if n:
-            kv += [["Reached target", f"{overall.get('target_pct')}%"], ["Hit the risk level", f"{overall.get('stop_pct')}%"], ["Expired", f"{overall.get('expired_pct')}%"]]
+            kv += [["Reached target", f"{overall.get('target_pct')}%"], ["Hit risk level", f"{overall.get('stop_pct')}%"], ["Expired", f"{overall.get('expired_pct')}%"]]
         out.append({"kind": "entry", "title": "WEEKLY SUMMARY", "heading": "Track record", "points": points[1:], "tags": tags("#Weekly", "#TrackRecord"), "stats": {"kv": kv}})
     validation = (learning_summary or {}).get("validation") or {}
     if validation:

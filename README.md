@@ -294,7 +294,8 @@ the run in `engine/feed_run.py`). Times are IST, weekdays. The app's own alert l
 
 Alerts that carry numbers are tables: movers, readings (score, price, reference and risk levels), block and bulk deals, circuits, gaps, IPO breakouts, volatility breaches,
 upcoming IPOs, ex-dates, index alerts, the weekly track record and the numbers of a target or stop reply. Each table is a monospace block with its source line and the hashtags (stock
-symbols, kind of alert; at most 25 per table). Text alerts (filings, corporate actions, headlines) keep a numbered heading with sub-points. News links show as "Read article".
+symbols, kind of alert; at most 25 per table). Phones wrap a monospace line wider than about 30 characters, so each table is at most about 28 wide: words go in a note under the table and a
+wider alert (readings, deals, circuits, gaps, breaches, IPOs) is two short tables. Text alerts (filings, corporate actions, headlines) keep a numbered heading with sub-points. News links show as "Read article".
 
 Movers are shown in two sections, rising and falling, and tagged `#Surge` at +10% or more and `#Crash` at -10% or less.
 

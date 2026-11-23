@@ -53,29 +53,32 @@ class RenderTests(unittest.TestCase):
     def render(self, items, label="Feed", tags=("#Feed",)):
         return digest_feeds.render_feed(items, [None] * len(items), TS, label, tags)
 
-    def test_readings_are_a_table_with_their_numbers_and_the_stock_hashtags(self):
+    def test_readings_are_two_narrow_tables_with_their_numbers_and_the_stock_hashtags(self):
         text = self.render([signal()])[0][0]
-        self.assertIn("<pre>", text)
-        self.assertRegex(text, r"Stock\s+Score\s+Price\s+Ref\s+Risk")
+        self.assertEqual(text.count("<pre>"), 2)
+        self.assertRegex(text, r"Stock\s+Score\s+Price")
         self.assertRegex(text, r"AXISBANK\s+\+60\s+100\.00")
+        self.assertRegex(text, r"Stock\s+Ref\s+Risk")
         self.assertRegex(text, r"#AXISBANK #Bullish #WeeksView")
         self.assertIn("Ref = nearest reference level", text)
         self.assertIn("SEBI-registered", text)
 
-    def test_movers_are_rows_of_one_table_with_move_and_price_columns(self):
-        text = self.render([mover("A.NS"), mover("B.NS")])[0][0]
+    def test_movers_are_rows_of_one_narrow_table_and_words_go_in_a_note(self):
+        small = {**mover("B.NS"), "small": True, "tags": ["+8.4%", "volume 7.9x average"]}
+        text = self.render([mover("A.NS"), small])[0][0]
         self.assertEqual(text.count("<pre>"), 1)
         table = text[text.index("<pre>"):text.index("</pre>")]
-        self.assertRegex(table, r"Stock\s+Move\s+Price\s+Note")
+        self.assertRegex(table, r"Stock\s+Move\s+Price\n")
+        self.assertNotIn("Note", table, "words are not a column: they wrap on a phone")
         self.assertRegex(table, r"A\s+\+8\.4%\s+69\.41")
-        self.assertRegex(table, r"B\s+\+8\.4%\s+69\.41")
+        self.assertIn("B: vol 7.9x; small stock", text)
         self.assertIn("#A #Mover", text)
 
     def test_each_section_is_its_own_table_and_falling_movers_are_apart_from_rising(self):
         ipo = {**mover("MEESHO.NS"), "kind": "ipo", "tags": ["IPO breakout: above listing-day high 258.00"], "move": 0.4}
         down = {**mover("C.NS"), "move": -9.0, "tags": ["-9.0%"]}
         text = self.render([mover("A.NS"), down, ipo])[0][0]
-        self.assertEqual(text.count("<pre>"), 3)
+        self.assertEqual(text.count("<pre>"), 4, "rising, falling and the IPO breakout's two tables")
         self.assertLess(text.index("RISING"), text.index("FALLING"))
         self.assertIn("258.00", text)
 
@@ -108,7 +111,8 @@ class RenderTests(unittest.TestCase):
                                                        {"date": "23-Nov-2026", "symbol": "BAD", "buySell": "SELL", "qty": "x", "watp": "1"}]}, "23-Nov-2026")
         self.assertEqual([r["symbol"] for r in rows], ["ABC.NS"], "only today's valid deals")
         text = self.render(rows)[0][0]
-        self.assertRegex(text, r"ABC\s+BUY\s+5\.2L\s+120\.50\s+6\.3cr")
+        self.assertRegex(text, r"ABC\s+BUY\s+5\.2L\s+120\.50")
+        self.assertRegex(text, r"ABC\s+6\.3cr")
         self.assertIn("ABC: Xyz Fund", text)
         self.assertIn("#BulkDeal", text)
 
@@ -119,11 +123,13 @@ class BuilderTests(unittest.TestCase):
         watch = [{"name": "Crude oil", "kind": "commodity", "price": 83.27, "change_pct": -0.85, "as_of": "2026-11-17"}, {"name": "Nifty 50", "kind": "index", "price": 1, "change_pct": 1, "as_of": "x"}]
         table = fi.commodities_table(watch, NOW)
         self.assertEqual(len(table["rows"]), 1)
-        self.assertIn("STALE", table["rows"][0][3], "data from 6 days ago is marked stale")
+        self.assertIn("Crude oil 17 Nov STALE", table["notes"][0], "data from 6 days ago is marked stale")
+        self.assertEqual(len(table["rows"][0]), 3, "no wide note column")
         sectors = [{"sector": s, "d1": d, "d5": 1.0, "n": 8} for s, d in (("IT", 1.2), ("Banks", 0.5), ("Metals", -0.7), ("Auto", -1.1), ("FMCG", 0.1))] + [{"sector": "Tiny", "d1": 9, "n": 1}]
         table = fi.sectors_table(sectors, NOW)
         self.assertNotIn("Tiny", " ".join(r[0] for r in table["rows"]), "a sector with fewer than 3 stocks is not ranked")
         self.assertEqual(table["rows"][0][0], "IT")
+        self.assertEqual(table["more"][0]["header"], ["Sector", "Stocks"])
 
     def test_urgent_index_alert_and_volatility_text(self):
         entry = fi.index_alert_entry({"name": "INDIA VIX", "last": 21.6, "tags": ["above 20"]}, NOW)
@@ -209,8 +215,9 @@ class VolatilityBreachTests(unittest.TestCase):
         self.assertEqual(feeds.settings()["volatility"]["every"], 15)
         items, _ = fi.volatility_breach_items([self.record()], {"A.NS": self.quote(1025.0, 2.5)}, True, {}, TS, "2026-11-23")
         text = digest_feeds.render_feed(items, [None], TS, "Volatility breaches", ["#VolatilityBreaches"])[0][0]
-        self.assertRegex(text, r"Stock\s+Move\s+x Range\s+Price\s+Prev")
-        self.assertRegex(text, r"A\s+\+2\.5%\s+2\.5x\s+1,025\.0\s+1,000\.0")
+        self.assertRegex(text, r"Stock\s+Move\s+x Range")
+        self.assertRegex(text, r"A\s+\+2\.5%\s+2\.5x")
+        self.assertRegex(text, r"A\s+1,025\.0\s+1,000\.0")
         self.assertIn("#VolatilityBreach", text)
         self.assertEqual(feeds.feed_for(items[0]), "volatility")
 
@@ -428,11 +435,13 @@ class TableAndLinkTests(unittest.TestCase):
         call = {"symbol": "AXISBANK.NS", "name": "Axis Bank", "horizon": "short", "side": "buy", "price": 1446.0, "currency": "INR"}
         outcome = {"outcome": "target", "exit_price": 1512.0, "resolved_date": "2026-11-27", "days_held": 3}
         html_reply = alerts.format_outcome(call, outcome, "https://x/#stock=A", markup=True)
-        self.assertRegex(html_reply, r"<pre>\s*Alerted\s+Now\s+Move\s+Days\n\s*1,446\.00\s+1,512\.00\s+\+4\.6%\s+3</pre>")
+        table = html_reply[html_reply.index("<pre>"):html_reply.index("</pre>")]
+        self.assertRegex(table, r"Alerted\s+Now\s+Move\s+Days")
+        self.assertRegex(table, r"1,446\.0\s+1,512\.0\s+\+4\.6%\s+3")
         self.assertIn("Open analysis", html_reply)
         plain = alerts.format_outcome(call, outcome)
         self.assertNotIn("<pre>", plain)
-        self.assertIn("1,512.00", plain)
+        self.assertIn("1,512.0", plain)
         self.assertTrue(plain.endswith(alerts.ADVISORY))
 
     def test_news_links_use_the_short_label_read_article(self):
@@ -451,3 +460,48 @@ class TableAndLinkTests(unittest.TestCase):
         for item in samples:
             self.assertIsNotNone(digest_feeds.to_row(item), item["kind"])
         self.assertIsNone(digest_feeds.to_row({"kind": "news", "symbol": "A.NS"}), "a headline has no numbers to tabulate")
+
+
+class PhoneWidthTests(unittest.TestCase):
+    """Phones wrap a monospace line wider than about 30 characters, which breaks a table. Every table must stay under 32 even with long names and big numbers."""
+    LIMIT = 32
+
+    def widest(self, items):
+        import re as _re
+        text = "".join(m[0] for m in digest_feeds.render_feed(items, [None] * len(items), TS, "Feed", ["#X"]))
+        lines = [l for block in _re.findall(r"<pre>(.*?)</pre>", text, flags=_re.S) for l in block.replace("&amp;", "&").splitlines()]
+        return max(len(l) for l in lines), text
+
+    def test_every_table_kind_stays_narrow(self):
+        big = {"kind": "mover", "symbol": "SHALIMARPAINTS.NS", "name": "x", "tags": ["+19.8%", "volume 10.5x average"], "price": 12345.67, "currency": "INR", "small": True, "move": 19.8}
+        cases = [[big], [{**big, "kind": "ipo", "tags": ["IPO breakout: above listing-day high 25,800.00"]}],
+                 [{"kind": "deal", "symbol": "LENSKARTLIMITED.NS", "name": "x", "qty": 12697702, "price": 12345.0, "value": 9.2e9, "pchange": -12.6}],
+                 [{"kind": "bulk", "symbol": "LENSKARTLIMITED.NS", "name": "x", "side": "BUY", "qty": 12697702.0, "price": 12345.0, "value": 9.2e9, "client": "Some Fund"}],
+                 [{**signal("BAJAJHLDNG.NS"), "price": 12345.5, "levels": {"kind": "r", "price": 13512.0, "pct": 4.6, "basis": "x", "risk_price": 11383.0, "risk_pct": -4.4}}]]
+        records = a_circuits = None
+        from engine import actions as act
+        circuit = act.circuit_records({"AllSec": {"data": [{"symbol": "HCL-INSYS", "series": "EQ", "ltp": "11.39", "change": "1.90", "priceBand": "20", "turnovercsv": 34563581}]}}, None, TS, "2026-11-23")
+        cases.append(fi.action_alert_items(circuit, {}, TS)[0])
+        gap = [{"id": "1", "type": "gap_up", "label": "Gap up", "symbol": "SHALIMARPAINTS.NS", "name": "x", "title": "t", "price": 12345.67, "move_pct": 12.5, "open": 11111.11, "prev_close": 9876.54,
+                "source": "s", "date": "d"}]
+        cases.append(fi.action_alert_items(gap, {}, TS)[0])
+        cases.append(fi.volatility_breach_items([{"symbol": "SHALIMARPAINTS.NS", "name": "x", "sector": "B", "indicators": {"atr": 10.0}}],
+                                                {"SHALIMARPAINTS.NS": {"price": 12345.0, "change_pct": 2.5, "state": "REGULAR"}}, True, {}, TS, "2026-11-23")[0])
+        cases.append(fi.upcoming_ipo_entries([{"name": "Shree Siddhivinayak Greentech", "board": "SME", "open": "2026-11-25", "close": "2026-11-27", "listing": "2026-12-02", "price": 142,
+                                               "subscription": 111.98, "gmp_pct": -22.45}], date(2026, 11, 23)))
+        cases.append(fi.action_dates_entries(act.corporate_action_records([{"symbol": "ABC", "comp": "Abc", "subject": "Bonus 1:1", "exDate": "25-Nov-2026", "recDate": "26-Nov-2026"}], 1), date(2026, 11, 23)))
+        cases.append([fi.index_alert_entry({"name": "NIFTY SMLCAP 100", "last": 12345.67, "tags": ["-3.0%"]}, NOW)])
+        cases.append([fi.indexes_table({k: {"last": 61557.6, "pct": -12.34, "high52": 1, "low52": 0} for k in fi.INDEX_NAMES}, NOW)])
+        cases.append([fi.commodities_table([{"name": "Crude oil", "kind": "commodity", "price": 1083.27, "change_pct": -0.85, "as_of": "2026-11-17"}], NOW)])
+        sectors = [{"sector": s, "d1": d1, "d5": 1.0, "n": 8} for s, d1 in (("Metals and Mining", 12.2), ("Pharma and Health", 5.5), ("Real Estate", 1.0), ("Banks", -0.5), ("Industrials", -7.7), ("New listings", -12.1))]
+        cases.append([fi.sectors_table(sectors, NOW)])
+        for items in cases:
+            width, text = self.widest(items)
+            self.assertLessEqual(width, self.LIMIT, f"{items[0]['kind']}: {width} wide")
+
+    def test_the_target_reply_table_is_narrow_too(self):
+        import re as _re
+        reply = alerts.format_outcome({"symbol": "A.NS", "name": "A", "horizon": "short", "side": "buy", "price": 12345.0, "currency": "INR"},
+                                      {"outcome": "target", "exit_price": 13512.0, "resolved_date": "2026-11-27", "days_held": 3}, markup=True)
+        block = _re.search(r"<pre>(.*?)</pre>", reply, flags=_re.S).group(1)
+        self.assertLessEqual(max(len(l) for l in block.splitlines()), self.LIMIT)
