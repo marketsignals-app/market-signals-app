@@ -102,6 +102,7 @@
     watch: new Set(store.get('watch', [])),
     lists: store.get('lists', {}),
     newsFilters: { tone: 'ALL', sector: 'ALL', official: false, tracked: false, q: '' },
+    annFilters: { group: 'ALL', type: 'ALL', main: false, q: '' }, ann: { state: 'idle', data: null },
     profile: Object.assign({ goal: 'balanced', horizon: 'long', risk: 'medium', market: 'ALL' }, store.get('profile', {}), { market: 'ALL' }),
     calc: Object.assign({ capital: 100000, risk: 1 }, store.get('calc', {})),
     notify: store.get('notify', false),
@@ -1101,6 +1102,84 @@
     const a = ai.agreement;
     if (a && a.compared) lines.push(`Compared with the rules on ${a.compared} headlines: mean difference ${a.mean_abs_difference} points${isNum(a.same_direction_pct) ? `, same direction on ${a.same_direction_pct}% of ${a.firm_pairs} clear cases` : ''}. Agreement is not accuracy: there is no labelled test of either score yet.`);
     return h('div', { class: 'card' }, h('b', null, 'AI scoring (optional) '), lines.map((t) => h('p', { class: 'muted small', style: 'margin:4px 0' }, t)));
+  }
+
+  /* ---------- the Announcements tab: corporate actions, circuits, surveillance, gaps and the other market events (announcements.json) ---------- */
+  async function fetchAnnouncements() {
+    S.ann.state = 'loading';
+    try {
+      const response = await fetch('announcements.json', { cache: 'no-store' });
+      if (!response.ok) throw new Error('announcements.json');
+      S.ann.data = await response.json();
+      S.ann.state = 'ready';
+    } catch (err) { S.ann.state = 'failed'; }
+    if (S.tab === 'announcements') render();
+  }
+  const ANN_TONE = { upper_circuit: 'buy', surge: 'buy', gap_up: 'buy', lower_circuit: 'warn', crash: 'warn', gap_down: 'warn', suspension: 'warn', delisting: 'warn', fo_ban: 'warn', asm: 'warn', gsm: 'warn' };
+  const istParts = (ts) => {
+    if (!isNum(ts)) return { day: 'Date unknown', time: '' };
+    const d = new Date(ts * 1000);
+    const fmt = (opts) => new Intl.DateTimeFormat('en-IN', Object.assign({ timeZone: 'Asia/Kolkata' }, opts)).format(d);
+    const key = fmt({ year: 'numeric', month: '2-digit', day: '2-digit' });
+    const today = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    const yesterday = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(Date.now() - 86400000));
+    return { day: key === today ? 'Today' : key === yesterday ? 'Yesterday' : fmt({ weekday: 'short', day: 'numeric', month: 'short' }), time: fmt({ hour: '2-digit', minute: '2-digit', hour12: false }) + ' IST' };
+  };
+  function annRow(r, mainSymbols) {
+    const url = safeUrl(r.link);
+    const parts = istParts(r.ts);
+    const name = r.symbol ? h('a', { href: '#stock=' + r.symbol }, h('b', null, r.name || r.symbol)) : h('b', null, r.name || 'Market');
+    return h('li', { class: 'newsstory' },
+      h('div', null, h('span', { class: `tag ${ANN_TONE[r.type] || ''}`, title: r.group }, r.label), ' ', name, r.symbol && mainSymbols.has(r.symbol) ? h('span', { class: 'muted small' }, ' · main list') : null),
+      h('div', { class: 'small' }, r.title || ''),
+      r.detail ? h('div', { class: 'small muted' }, r.detail) : null,
+      h('div', { class: 'small muted' }, `${r.source || ''} · ${parts.time}`, r.date ? ` · date ${r.date}` : '', url ? [' · ', h('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, 'Open the filing')] : ''));
+  }
+  function viewAnnouncements() {
+    if (S.ann.state === 'idle') fetchAnnouncements();
+    if (S.ann.state !== 'ready') {
+      return h('div', null, h('h2', null, 'Announcements'), h('div', { class: 'empty' }, S.ann.state === 'failed' ? 'The announcements could not be loaded. They appear after the next update.' : 'Loading announcements...'));
+    }
+    const d = S.ann.data;
+    const f = S.annFilters;
+    const mainSymbols = new Set((S.data.stocks || []).map((x) => x.symbol));
+    const types = d.types || {};
+    const groups = [...new Set(Object.values(types).map((t) => t.group))];
+    const list = h('div', null);
+    const status = h('p', { class: 'muted small' });
+    const draw = () => {
+      const q = f.q.trim().toLowerCase();
+      const rows = (d.items || []).filter((r) => (f.group === 'ALL' || r.group === f.group) && (f.type === 'ALL' || r.type === f.type) && (!f.main || mainSymbols.has(r.symbol))
+        && (!q || `${r.name || ''} ${r.symbol || ''} ${r.title || ''} ${r.label}`.toLowerCase().includes(q)));
+      status.textContent = `${rows.length} of ${(d.items || []).length} events from the last 7 days. Newest first.`;
+      const days = [];
+      for (const r of rows.slice(0, 300)) {
+        const day = istParts(r.ts).day;
+        if (!days.length || days[days.length - 1].day !== day) days.push({ day, rows: [] });
+        days[days.length - 1].rows.push(r);
+      }
+      list.replaceChildren(...(days.length ? days.map((g) => h('div', { class: 'card' }, h('h4', { style: 'margin:0 0 4px' }, g.day), h('ul', { class: 'clean' }, g.rows.map((r) => annRow(r, mainSymbols)))))
+        : [h('div', { class: 'empty' }, 'No event matches these filters.')]));
+    };
+    const sel = (label, key, options) => h('label', { class: 'field' }, label, h('select', { onchange: (e) => { f[key] = e.target.value; if (key === 'group') f.type = 'ALL'; render(); } },
+      options.map(([v, text]) => h('option', { value: v, selected: f[key] === v }, text))));
+    const typeOptions = [['ALL', 'Any type']].concat(Object.entries(types).filter(([, t]) => f.group === 'ALL' || t.group === f.group).map(([k, t]) => [k, `${t.label} (${(d.counts || {})[k] || 0})`]));
+    const sources = (d.sources || []).map((x) => h('tr', null, h('td', null, x.name), h('td', null, h('span', { class: `tag ${x.ok ? 'buy' : 'warn'}` }, x.ok ? 'Working' : 'Not read yet')),
+      h('td', { class: 'small muted hide-sm' }, x.error || (x.fetched_at ? `read ${readStamp(x.fetched_at)}` : ''))));
+    const root = h('div', null,
+      h('h2', null, 'Announcements and market events ', h('span', { class: 'muted small' }, `updated ${readStamp(d.generated_at)}`)),
+      h('p', { class: 'muted small' }, 'Mergers, demergers and schemes, bonus, splits, buybacks and rights, record dates, trading suspensions and delistings, upper and lower circuits, ASM and GSM lists, the F&O ban list, gaps at the open, surges and crashes. Kept for 7 days.'),
+      h('div', { class: 'card filterbar' }, h('div', { class: 'row' },
+        h('label', { class: 'field' }, 'Search', h('input', { type: 'search', placeholder: 'Company, symbol or words', value: f.q, oninput: (e) => { f.q = e.target.value; draw(); } })),
+        sel('Group', 'group', [['ALL', 'All groups']].concat(groups.map((g) => [g, g]))),
+        sel('Type', 'type', typeOptions),
+        h('label', { class: 'field' }, h('span', null, 'Stocks in the main list'), h('input', { type: 'checkbox', checked: f.main, onchange: (e) => { f.main = e.target.checked; draw(); } })))),
+      status, list,
+      h('details', { class: 'card' }, h('summary', null, h('b', null, 'Sources '), h('span', { class: 'muted small' }, `${(d.sources || []).filter((x) => x.ok).length} of ${(d.sources || []).length} working`)),
+        h('div', { style: 'overflow-x:auto' }, h('table', null, h('thead', null, h('tr', null, h('th', null, 'Source'), h('th', null, 'State'), h('th', { class: 'hide-sm' }, 'Detail'))), h('tbody', null, sources))),
+        h('p', { class: 'muted small', style: 'margin-bottom:0' }, 'Filings and lists come from the NSE and BSE and are official. What kind of announcement it is gets decided by the exchange category, then by fixed phrases, so an unusual wording can be missed. Circuits are worked out from the NSE price bands, gaps, surges and crashes from delayed Yahoo quotes. This is information, not advice.')));
+    draw();
+    return root;
   }
 
   /* ---------- the News tab and the Sentiment Dashboard ---------- */
@@ -2324,7 +2403,7 @@
     }
     const view = $('#view');
     if (!S.data) { view.replaceChildren(h('div', { class: 'empty' }, S.error || 'Loading...')); return; }
-    const builders = { signals: viewSignals, suggest: viewSuggest, news: viewNews, ipo: viewIpo, market: viewMarket, events: viewEvents, track: viewTrack };
+    const builders = { signals: viewSignals, suggest: viewSuggest, news: viewNews, announcements: viewAnnouncements, ipo: viewIpo, market: viewMarket, events: viewEvents, track: viewTrack };
     view.replaceChildren((builders[S.tab] || viewSignals)());
     decorateHelp(view);
   }

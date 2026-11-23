@@ -118,7 +118,7 @@ def parse_quotes(payload):
         out[row["symbol"]] = {"price": price, "change_pct": _num(row.get("regularMarketChangePercent")), "volume": _num(row.get("regularMarketVolume")),
                               "avg_volume": _num(row.get("averageDailyVolume3Month")), "high52": _num(row.get("fiftyTwoWeekHigh")),
                               "low52": _num(row.get("fiftyTwoWeekLow")), "cap": _num(row.get("marketCap")), "state": row.get("marketState"),
-                              "time": _num(row.get("regularMarketTime")), "pe": _num(row.get("trailingPE")), "forward_pe": _num(row.get("forwardPE")),
+                              "time": _num(row.get("regularMarketTime")), "open": _num(row.get("regularMarketOpen")), "prev_close": _num(row.get("regularMarketPreviousClose")), "pe": _num(row.get("trailingPE")), "forward_pe": _num(row.get("forwardPE")),
                               "eps": _num(row.get("epsTrailingTwelveMonths")), "book_value": _num(row.get("bookValue")), "pb": _num(row.get("priceToBook")),
                               # Yahoo's own "trailing" dividend fields are wrong for many NSE stocks (Infosys shows 0.05%), so only its indicated annual
                               # dividend per share is kept, and the yield is that divided by the price

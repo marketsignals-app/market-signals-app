@@ -18,7 +18,7 @@ SECTION_OF = {"signal": digest.READINGS_TITLE, "deal": digest.DEALS_TITLE, "move
               "brief": digest.BRIEF_TITLE, "news": digest.NEWS_TITLE, "bulk": "━━ BULK DEALS ━━", "filing": "━━ IMPORTANT FILINGS ━━"}
 ICONS = {"readings": "\U0001F7E2", "movers": "\U0001F4C8", "ipo_breakout": "\U0001F680", "deals": "\U0001F9F1", "filings": "\U0001F4D1", "news": "\U0001F4F0", "indexes": "\U0001F4CA",
          "commodities": "\U0001F6E2", "sectors": "\U0001F9ED", "news_digest": "\U0001F5DE", "ipo_upcoming": "\U0001F4C5", "events_today": "\U0001F5D3", "weekly": "\U0001F4C6",
-         "bulk_deals": "📦", "volatility": "⚡", "urgent": "⚠️"}
+         "bulk_deals": "📦", "volatility": "⚡", "circuits": "🚦", "corp_actions": "📜", "surveillance": "🛑", "gaps": "📊", "action_dates": "🗓", "urgent": "⚠️"}
 
 
 def tag_line(tags):
@@ -71,7 +71,9 @@ def line_item(number, item):
     if kind in ("mover", "low52"):
         body = (f"<b>{esc(item['name'])}</b> · {esc('; '.join(item['tags']))}{' · small stock' if item.get('small') else ''} · "
                 f"{esc(alerts.money_text(item['price'], item.get('currency') or ''))}")
-        tags = stock_tags(item, "#Mover" if kind == "mover" else "#52WeekLow")
+        move = item.get("move") if isinstance(item.get("move"), (int, float)) else 0
+        extra = ("#Surge" if move >= 10 else "#Crash" if move <= -10 else "#Rising" if move > 0 else "#Falling") if kind == "mover" else "#52WeekLow"
+        tags = stock_tags(item, "#Mover" if kind == "mover" else "#52WeekLow", extra)
     elif kind == "ipo":
         body = f"\U0001F680 <b>{esc(item['name'])}</b> · {esc('; '.join(item['tags']))} · {esc(alerts.money_text(item['price'], item.get('currency') or ''))}"
         tags = stock_tags(item, "#IPOBreakout")
@@ -110,6 +112,8 @@ def table_block(item):
 
 def _section(item):
     kind = item["kind"]
+    if kind == "mover":                                  # movers are shown as rising or falling
+        return "━━ RISING ━━" if (item.get("move") or 0) >= 0 else "━━ FALLING ━━"
     title = item.get("title") if kind in ("table", "entry", "line") and item.get("title") else SECTION_OF.get(kind, digest.NEWS_TITLE)
     return title if str(title).startswith("━") else f"━━ {title} ━━"
 

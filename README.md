@@ -277,6 +277,11 @@ the run in `engine/feed_run.py`). Times are IST, weekdays. The app's own alert l
 | Movers | 30 min | market hours | only if new |
 | Bullish and bearish readings | 15 min | market hours | only if new; a reading that reversed while waiting is dropped |
 | Volatility breaches | at once | market hours | each breach is sent on its own at the next run (up to 5 per run; any more wait for a 15-minute batch): a stock of the main list whose move today is at least 2x its own 14-day average daily range (ATR), again at 3x; it replies under the stock's reading alert when that was announced within 45 days; stocks with untrusted data are skipped |
+| Circuit hits | 15 min | market hours | only if new: stocks at their upper or lower circuit (NSE price-band feed, limit worked out from the previous close). Defaults: band of 5% or more and turnover of at least 1 crore today (`config/alerts.json` "circuits": `min_band`, `min_turnover_crore`) |
+| Corporate actions | 15 min | 08:00 to 22:00 | only if new: mergers, demergers, schemes of arrangement, open offers, bonus, splits, buybacks, rights, record dates, trading suspensions and delistings, from official NSE and BSE announcements and the NSE corporate-actions list |
+| Share actions coming up | daily 08:40 | | bonus, split, buyback, rights, merger, demerger and scheme with an ex or record date in the next 7 days |
+| Surveillance and F&O ban | 60 min | 08:30 to 21:30 | only if new: additions to the NSE ASM and GSM lists and entries into the F&O ban (exits and removals are on the website) |
+| Gaps at the open | 15 min | 09:20 to 10:05 | only if new: a main-list stock that opened 3% or more away from its previous close (needs Yahoo's open price) |
 | IPO breakouts | 30 min | market hours | only if new (price crossing the listing-day high or low) |
 | Block deals | 15 min | market hours | only if new |
 | Bulk deals | daily | from 18:00 (retried for 4 hours until the NSE publishes them) | the day's largest, with the client as the NSE publishes it |
@@ -286,6 +291,14 @@ the run in `engine/feed_run.py`). Times are IST, weekdays. The app's own alert l
 | Upcoming IPOs | daily 09:00 | | open now, closing today, opening within 7 days, listing within 3 days |
 | Today's events | daily 08:30 | | confirmed results, ex-dates and the like |
 | Weekly summary | Sunday 18:00 | | track record, learning outlook (still "no better than the base rate"), data health |
+
+Movers are shown in two sections, rising and falling, and tagged `#Surge` at +10% or more and `#Crash` at -10% or less.
+
+**Announcements tab (website).** A separate tab lists all of these events for the last 7 days, newest first, with filters by group and type, a search box and a main-list-only switch:
+mergers and schemes, share actions, trading restrictions (suspension, delisting, F&O ban, ASM, GSM), circuits, gaps, surges and crashes. It reads its own file, `announcements.json`
+(built by `engine/actions.py` and `engine/actions_run.py`), so `data.json` does not grow. Each row shows the source and time, and links to the official filing where there is one. The tab
+lists the state of every source. What kind of announcement it is gets decided by the exchange's category, then by fixed phrases, so an unusual wording can be missed; circuits come from one NSE source.
+The first run after this was added records what is already published and alerts nothing.
 
 Sent at once, outside the schedule: urgent index and volatility alerts (an Indian index move of 2% or more, India VIX past 20 or 25; global indexes are no longer alerted), the existing pre-open and post-close
 briefs, replies when a tracked call reaches its target or stop, and a change of the market-conditions label.
@@ -316,7 +329,7 @@ tracked or not, as soon as they appear. Only the 122 tracked stocks (plus new li
 Details and evidence: `docs/audit-followup-2026-11-16.md`.
 
 * `python tools/verify_market_data.py --volume` checks the deployed prices (and NSE volumes) against the NSE end-of-day file, same session only. Not-yet-published references give UNVERIFIED, never a pass or a fail.
-* `python tools/check_production.py --cache signals-v41` reads what the deployed site published (data freshness, the NSE feed
+* `python tools/check_production.py --cache signals-v42` reads what the deployed site published (data freshness, the NSE feed
   as the Actions run saw it, stale handling, the service-worker cache name) and prints PASS, FAIL or UNVERIFIED for each. It cannot read
   the Actions logs, which need a login, so "error logged" stays UNVERIFIED unless you read the run log yourself.
 * `python tools/strategy_report.py` measures the two rules against buy-and-hold (drawdown, downside deviation, Sharpe, Sortino,

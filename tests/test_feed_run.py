@@ -302,7 +302,7 @@ class DispatchTests(unittest.TestCase):
         low = {**mover("V.NS"), "kind": "low52", "tags": ["at 52-week low"]}
         queue = feeds.enqueue([], [("movers", mover("A.NS")), ("movers", low), ("movers", mover("B.NS"))], TS)
         dispatch([], {"feeds_sent": {"movers": "x"}, "feed_queue": queue}, send, now=NOW + timedelta(minutes=1))
-        self.assertEqual(send.sent[0].count("MOVERS"), 1)
+        self.assertEqual(send.sent[0].count("RISING"), 1)
         self.assertEqual(send.sent[0].count("52-WEEK LOWS"), 1)
 
     def test_a_filing_uses_the_company_name_and_has_no_levels_note(self):

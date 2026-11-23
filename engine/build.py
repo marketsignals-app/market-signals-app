@@ -16,7 +16,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from . import digest, event_news, events, market as market_view, verify
-from . import alert_memory, digest_feeds, feed_items, feed_run, feeds, ledger_git, manifest, ai_sentiment, catalog, data_learning, evidence, learning, news_ai, news_intel, news_sources, nse_live, sentiment, provenance, statements, universe_sync, alerts, backtest, costs, deals_live, sessions, wide, discover, membership as index_membership, official, dividends, exchange, fetch, fundamentals, ipo_gmp, ledger, news, patterns, risk, signals, tracking
+from . import actions, actions_run, alert_memory, digest_feeds, feed_items, feed_run, feeds, ledger_git, manifest, ai_sentiment, catalog, data_learning, evidence, learning, news_ai, news_intel, news_sources, nse_live, sentiment, provenance, statements, universe_sync, alerts, backtest, costs, deals_live, sessions, wide, discover, membership as index_membership, official, dividends, exchange, fetch, fundamentals, ipo_gmp, ledger, news, patterns, risk, signals, tracking
 
 ROOT = Path(__file__).resolve().parent.parent
 WORKERS = 6
@@ -895,6 +895,14 @@ def run(args):
             return None
         return link_for_symbol(symbol, "news" if item["kind"] == "news" and symbol in by_symbol else "signals")
 
+    # corporate actions, circuits, surveillance, gaps, surges and crashes: records for the Announcements tab, and Telegram items for the ones not alerted before
+    news_items = [item for rows in news_pool.values() for item in rows]
+    action_records, action_memory = actions_run.collect(now, now_ts, nse, news_items, quotes, market_of, "IN" in open_now, mover_events, names, state, alert_cfg.get("actions"))
+    previous_archive = (load_previous(args.prev, "announcements.json") or {}).get("items") or []
+    action_archive = actions.merge_archive(previous_archive, action_records, now_ts)
+    action_items, action_seen = feed_items.action_alert_items(action_records, state.get("action_seen"), now_ts, baseline="action_seen" not in state)
+    print(f"Announcements: {len(action_records)} records this run, {len(action_archive)} kept, {len(action_items)} to alert")
+
     if alert_cfg.get("scheduled_feeds", True):
         # scheduled feeds: each kind of alert goes out on its own cadence (engine/feeds.py); the app's alert log above is unchanged
         extra = []
@@ -904,6 +912,7 @@ def run(args):
         extra += [] if first_run else breaches
         regime, regime_label = feed_items.regime_entry(conditions, state.get("regime_seen"))
         extra += [regime] if regime else []
+        extra += action_items
 
         def bulk_payload():
             payload, nse["deals"] = sessions.Source("NSE large deals", sessions.LARGE_DEALS).fetch(now, nse.get("deals"))
@@ -911,13 +920,14 @@ def run(args):
 
         sources = {"indices": indices, "india_open": "IN" in open_now, "watch": (overview or {}).get("watch"), "sectors": (conditions.get("IN") or {}).get("sectors"),
                    "news_dashboard": news_dash, "ipos": ipos.get("india") if ipos.get("india_ok") else [], "events": events_data["items"], "track_record": prev_data.get("track_record"),
-                   "learning": prev_data.get("learning"), "health": prev_data.get("data_health"), "bulk_payload": bulk_payload, "today_label": today_label, "names": names}
+                   "learning": prev_data.get("learning"), "health": prev_data.get("data_health"), "bulk_payload": bulk_payload, "today_label": today_label, "names": names, "actions_archive": action_archive}
         send_one = (lambda text, reply_to=None: send_formatted(token, chat, text, reply_to)) if token and chat else None
         feed_state, calls, _sent = feed_run.dispatch(items + extra, state, now, now_ts, feeds.settings(alert_cfg), sources, by_record, send_one, link_of, today_ist)
         if not (token and chat) and lines:
             print("New alerts are in the app. Telegram is not set up (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID).")
     else:                                                 # the earlier behaviour: one digest per run (alert_cfg "scheduled_feeds": false)
         feed_state, filing_seen, regime_label, vol_seen = {}, state.get("filing_seen"), state.get("regime_seen"), state.get("vol_seen")
+        action_seen = state.get("action_seen")
         calls = tracking.make_calls(items, by_record, now_ts)
         if lines and token and chat:
             links = [link_for_symbol(i["symbol"], "news" if i["kind"] == "news" and i["symbol"] in by_symbol else "signals") if i["symbol"] in market_of else None for i in items]
@@ -949,7 +959,7 @@ def run(args):
             "exchange_data": {"delivery_dates": sorted(delivery)[-3:], "note": "NSE delivery data and bulk/block deals. The exchange order book (bid/ask depth) is not published for free."}}
     new_state = {"seen_alerts": seen, "delivery": delivery, "new_listings": registry,
                  "fundamentals": fund_cache, "ipo_gmp": ipo_cache, "alert_log": alert_log,
-                 "alert_sides": sides, **feed_state, "filing_seen": filing_seen, "regime_seen": regime_label, "health_seen": health_seen, "vol_seen": vol_seen, "universe_sync": sync_state, "analysis_index": analysis_index, "wide_universe": wide_cache, "wide_cursor": wide_cursor, "mover_seen": mover_seen, "index_seen": index_seen,
+                 "alert_sides": sides, **feed_state, "filing_seen": filing_seen, "regime_seen": regime_label, "health_seen": health_seen, "vol_seen": vol_seen, "action_seen": action_seen, "surv_state": action_memory["surv_state"], "ban_state": action_memory["ban_state"], "universe_sync": sync_state, "analysis_index": analysis_index, "wide_universe": wide_cache, "wide_cursor": wide_cursor, "mover_seen": mover_seen, "index_seen": index_seen,
                  "briefs_sent": {k: v for k, v in briefs_sent.items() if v == today_ist}, "nse_sources": nse, "news_alert_history": {s: v for s, v in news_history.items() if v}, "deal_seen": deal_seen,
                  "live_deals": {k: v for k, v in live_deals.items() if k != "deals"}, "eod_close": closes, "nse_live": {k: v for k, v in live_feed.items() if k != "prices"}, "statements": statements_cache, "news_providers": provider_status, "news_archive": news_archive, "data_health": health, "event_news": event_cache, "official": official_events, "ledger_pending": pending, "reply_queue": queue, "notified_outcomes": notified}
 
@@ -960,6 +970,9 @@ def run(args):
     data["build_id"] = build_id
     (out / "data.json").write_text(json.dumps(data, allow_nan=False, separators=(",", ":")), encoding="utf-8")
     (out / "state.json").write_text(json.dumps(new_state, allow_nan=False, separators=(",", ":")), encoding="utf-8")
+    announcements = {"v": 1, "generated_at": now.isoformat(timespec="seconds"), "items": action_archive, "counts": actions.counts(action_archive),
+                     "types": {k: {"label": v[0], "group": v[1]} for k, v in actions.TYPES.items()}, "sources": actions_run.source_status(nse)}
+    (out / "announcements.json").write_text(json.dumps(announcements, allow_nan=False, separators=(",", ":")), encoding="utf-8")
     if ai_scores:                                # the scores the build used, kept so a failed read of the data branch next run still has them
         (out / "news_ai.json").write_text(json.dumps({"v": 1, "model": (ai_meta or {}).get("model"), "generated_at": (ai_meta or {}).get("generated_at"), "scores": ai_scores},
                                                      allow_nan=False, separators=(",", ":")), encoding="utf-8")

@@ -271,8 +271,8 @@ details.ev[open] > summary::after { transform: rotate(90deg); }
 .bottomnav { display: none; }
 @media (max-width: 720px) {
   .tabs { display: none; }
-  .bottomnav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; display: grid; grid-template-columns: repeat(6, 1fr); background: var(--card); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
-  .bottomnav button { display: grid; justify-items: center; gap: 1px; min-height: 54px; padding: 6px 0 4px; border: 0; background: none; color: var(--muted); font: inherit; font-size: 10.5px; }
+  .bottomnav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; display: grid; grid-template-columns: repeat(8, 1fr); background: var(--card); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
+  .bottomnav button { display: grid; justify-items: center; gap: 1px; min-height: 54px; padding: 6px 0 4px; border: 0; background: none; color: var(--muted); font: inherit; font-size: 10px; }
   .bottomnav button[aria-current="page"] { color: var(--accent); font-weight: 700; }
   body { padding-bottom: 64px; }
   #toasts { bottom: 70px; }

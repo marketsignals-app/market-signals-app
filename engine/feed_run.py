@@ -15,7 +15,8 @@ ANNOUNCED_LIMIT = 500
 KIND_ORDER = {"signal": 0, "mover": 0, "ipo": 0, "deal": 0, "filing": 0, "news": 0, "low52": 1}
 FEED_TAG = {"readings": "#Readings", "movers": "#Movers", "ipo_breakout": "#IPOBreakout", "deals": "#BlockDeals", "filings": "#Filings", "news": "#News", "indexes": "#Indexes",
             "commodities": "#Commodities", "sectors": "#Sectors", "news_digest": "#NewsDigest", "ipo_upcoming": "#UpcomingIPO", "events_today": "#Events", "weekly": "#Weekly",
-            "bulk_deals": "#BulkDeals", "volatility": "#VolatilityBreaches"}
+            "bulk_deals": "#BulkDeals", "volatility": "#VolatilityBreaches", "circuits": "#Circuits", "corp_actions": "#CorporateActions", "surveillance": "#Surveillance",
+            "gaps": "#Gaps", "action_dates": "#ExDates"}
 
 
 def _side_now(record, horizon):
@@ -69,6 +70,8 @@ def build_snapshot(name, src, now, today_iso):
             return feed_items.events_today_entries(src.get("events"), today_iso)
         elif name == "weekly":
             return feed_items.weekly_entries(src.get("track_record"), src.get("learning"), src.get("health"))
+        elif name == "action_dates":
+            return feed_items.action_dates_entries(src.get("actions_archive"), datetime.fromisoformat(today_iso).date())
         elif name == "bulk_deals":
             payload = src["bulk_payload"]() if callable(src.get("bulk_payload")) else None
             return feed_items.bulk_deal_items(payload, src.get("today_label"), src.get("names"))
@@ -111,7 +114,7 @@ def dispatch(items, state, now, now_ts, table, src, records, send, link_of, toda
         spec = table[name]
         if spec.get("kind") == "event":
             taken, queue = feeds.take(queue, name, now_ts, table)
-            built, requeue = sorted([i for i in taken if _still_true(i, records)], key=lambda i: KIND_ORDER.get(i.get("kind"), 9)), True       # stable: same kinds sit together, one section each
+            built, requeue = sorted([i for i in taken if _still_true(i, records)], key=lambda i: (KIND_ORDER.get(i.get("kind"), 9), 1 if (i.get("move") or 0) < 0 else 0)), True       # stable: same kinds sit together, one section each
         else:
             built, requeue = build_snapshot(name, src, now, today_iso), False
         if built:

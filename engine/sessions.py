@@ -31,8 +31,8 @@ WINDOWS = {"in_preopen": ("IN", 9 * 60 + 8, 9 * 60 + 40, (0, 1, 2, 3, 4)),
 class Source:
     """One NSE endpoint with the shared refusal handling."""
 
-    def __init__(self, name, url):
-        self.name, self.url = name, url
+    def __init__(self, name, url, text=False):
+        self.name, self.url, self.text = name, url, text      # text: the answer is plain text (a CSV file), not JSON
 
     def fetch(self, now, state, log=print, getter=http_get):
         """(payload or None, state to keep). Never raises."""
@@ -46,7 +46,8 @@ class Source:
             log(f"{self.name}: skipped, refused earlier; next attempt after {held}")
             return None, state
         try:
-            payload = json.loads(getter(self.url, headers={"Accept": "application/json"}, retries=2))
+            body = getter(self.url, headers={"Accept": "application/json"}, retries=2)
+            payload = body.decode("utf-8", "replace") if self.text and isinstance(body, bytes) else body if self.text else json.loads(body)
         except (FetchError, ValueError) as err:
             text = str(err)
             refused = "403" in text or "401" in text

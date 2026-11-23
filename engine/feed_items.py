@@ -302,6 +302,63 @@ def volatility_breach_items(records, quotes, india_open, seen, now_ts, today_iso
     return items, seen
 
 
+# ---------- corporate actions, circuits, surveillance, gaps (records from engine/actions.py) ----------
+CORP_TYPES = ("merger", "demerger", "scheme", "open_offer", "bonus", "split", "buyback", "rights", "record_date", "suspension", "delisting")
+LINE_FEEDS = {"upper_circuit": ("circuits", "UPPER CIRCUIT", "#UpperCircuit"), "lower_circuit": ("circuits", "LOWER CIRCUIT", "#LowerCircuit"), "fo_ban": ("surveillance", "F&O BAN", "#FnOBan"),
+              "asm": ("surveillance", "ASM LIST", "#ASM"), "gsm": ("surveillance", "GSM LIST", "#GSM"), "gap_up": ("gaps", "GAP UP AT THE OPEN", "#GapUp"),
+              "gap_down": ("gaps", "GAP DOWN AT THE OPEN", "#GapDown")}
+LIMITS = {"corp_actions": 10, "circuits": 15, "surveillance": 10, "gaps": 10}
+
+
+def action_alert_items(records, seen, now_ts, baseline=False):
+    """(items, seen): Telegram items for records not alerted before. `seen` is {record id: ts} (kept 5 days). With baseline=True (the first run) the records are only remembered,
+    so the first run does not send everything the exchange published in the last days. Additions to surveillance lists are alerted; removals stay on the website."""
+    seen = {k: v for k, v in (seen or {}).items() if now_ts - v <= 5 * 86400}
+    items, per_feed = [], {}
+    for r in records or []:
+        if r["id"] in seen:
+            continue
+        seen[r["id"]] = now_ts
+        if baseline:
+            continue
+        kind = r["type"]
+        if kind in CORP_TYPES:
+            feed, title = "corp_actions", None
+        elif kind in LINE_FEEDS:
+            if kind in ("asm", "gsm") and r["title"].startswith("Removed"):
+                continue
+            feed, title, hashtag = LINE_FEEDS[kind]
+        else:
+            continue
+        if per_feed.get(feed, 0) >= LIMITS[feed]:
+            continue
+        per_feed[feed] = per_feed.get(feed, 0) + 1
+        if feed == "corp_actions":
+            points = [r["title"]] + ([r["detail"]] if r.get("detail") else []) + [f"Source: {r['source']}" + (f" · {r['date']}" if r.get("date") else "")]
+            items.append({"kind": "entry", "feed": "corp_actions", "title": "CORPORATE ACTIONS", "heading": f"{r['name']}: {r['label']}", "points": points,
+                          "tags": tags(symbol_tag(r["symbol"]), word_tag(r["label"]), "#CorporateAction"), "link": r.get("link") or "", "symbol": r["symbol"]})
+            continue
+        if kind in ("upper_circuit", "lower_circuit"):
+            text = f"{r['name']} · {r['label']} ({r['band']:g}% band) · \u20b9{r['price']:,.2f} · {r['move_pct']:+.1f}% · turnover \u20b9{r['turnover'] / 1e7:,.1f} cr"
+        elif kind in ("gap_up", "gap_down"):
+            text = f"{r['name']} · {r['title']} · now \u20b9{r['price']:,.2f}"
+        else:
+            text = f"{r['name']} · {r['title']}"
+        items.append({"kind": "line", "feed": feed, "title": title, "text": text, "tags": tags(symbol_tag(r["symbol"]), hashtag), "symbol": r["symbol"]})
+    return items, seen
+
+
+def action_dates_entries(records, today, days=7, limit=12):
+    """The daily list of share actions (bonus, split, buyback, rights, merger, demerger, scheme) whose ex or record date falls in the next week."""
+    from . import actions
+    out = []
+    for when, key, r in actions.upcoming_dates(records, today, days)[:limit]:
+        what = "ex-date" if key == "ex_date" else "record date"
+        out.append({"kind": "entry", "title": "SHARE ACTIONS COMING UP", "heading": f"{r['name']}: {r['label']}, {what} {when.strftime('%d %b')}",
+                    "points": [r["title"]] + ([r["detail"]] if r.get("detail") else []) + [f"Source: {r['source']}"], "tags": tags(symbol_tag(r["symbol"]), word_tag(r["label"]), "#ExDate"), "symbol": r["symbol"]})
+    return out
+
+
 def bulk_deal_items(payload, today_label, names=None, limit=12):
     """The day's bulk deals as the NSE publishes them (after the close, with the client's name): the largest by value, as one-line items.
     payload is the NSE large-deals snapshot; today_label looks like 23-Nov-2026. Only deals dated today are used; rows without a quantity or price are skipped."""
