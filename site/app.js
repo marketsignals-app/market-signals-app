@@ -1058,7 +1058,7 @@
         withStock && st.symbol ? h('a', { href: '#stock=' + st.symbol, class: 'small', title: 'Open the stock' }, h('b', null, st.name || st.symbol), ' ') : (withStock ? h('b', { class: 'small' }, `${st.sector || 'Market'} `) : null),
         h('span', { class: `tag ${TONE_CLASS[st.tone] || ''}` }, `${st.tone} ${signedInt(st.sentiment)}`), ' ',
         h('span', { class: 'tag', title: 'How much this could matter: event type, credibility, relevance and how recent it is, from 0 to 100' }, `Impact ${st.impact}`), ' ',
-        official ? h('span', { class: 'tag buy', title: 'An official filing on the exchange' }, 'Official') : null, st.ai ? h('span', { class: 'tag', title: 'Also scored by a language model' }, 'AI-scored') : null,
+        official ? h('span', { class: 'tag buy', title: 'An official filing on the exchange' }, 'Official') : null, isNum(st.ai_sentiment) ? h('span', { class: 'tag', title: `A language model scored this headline ${signedInt(st.ai_sentiment)} (the rule-based score is ${signedInt(st.rule_sentiment)}). It is shown for comparison and is not used in the sentiment above.` }, `AI view ${signedInt(st.ai_sentiment)}`) : null,
         h('span', { class: 'muted small' }, ` ${st.event_label}`)),
       h('div', null, safeUrl(st.link) ? h('a', { href: st.link, target: '_blank', rel: 'noopener noreferrer' }, st.title) : st.title),
       h('div', { class: 'muted small' }, `${sources.join(', ')} · ${when(st.ts)} · credibility ${st.credibility}`, st.duplicates ? ` · ${st.duplicates} repeat${st.duplicates === 1 ? '' : 's'} not counted` : '',
@@ -1089,6 +1089,19 @@
     return h('div', { class: 'wide small', style: 'margin:6px 0' }, h('b', null, 'News: '), h('span', { class: `tag ${INTERPRETATION_CLASS[n.interpretation] || ''}` }, n.interpretation), ` sentiment ${signedInt(n.sentiment)}, impact ${n.impact}, ${n.n} stor${n.n === 1 ? 'y' : 'ies'} `, h('span', { class: `tag ${vc}` }, vt),
       n.top && n.top.title ? h('div', { class: 'muted' }, `${n.top.event_label || 'Latest'}: ${n.top.title} (${n.top.source || ''})`) : null);
   };
+
+  /* The optional language-model job: what it did last, and how its scores compare with the rules (agreement is not accuracy). */
+  function aiNote(ai) {
+    if (!ai) return null;
+    const st = ai.status;
+    const lines = [];
+    lines.push(ai.shadow ? 'AI scoring is in test mode: a hosted language model (GitHub Models) scores new headlines, and its score is shown beside the rule-based one but is not used in any sentiment, reading or alert.' : `AI scoring is on (weight ${ai.weight}).`);
+    if (st) lines.push(`Last model run ${st.at ? new Date(st.at).toLocaleString() : 'unknown'}: ${st.outcome || 'no outcome recorded'}; ${st.scored || 0} scored, ${st.already_scored || 0} already scored, ${st.worth_scoring || 0} headlines worth scoring${st.error ? `. Stopped on: ${st.error}` : ''}.`);
+    else lines.push('The model job has not reported a run yet, so there are no AI scores.');
+    const a = ai.agreement;
+    if (a && a.compared) lines.push(`Compared with the rules on ${a.compared} headlines: mean difference ${a.mean_abs_difference} points${isNum(a.same_direction_pct) ? `, same direction on ${a.same_direction_pct}% of ${a.firm_pairs} clear cases` : ''}. Agreement is not accuracy: there is no labelled test of either score yet.`);
+    return h('div', { class: 'card' }, h('b', null, 'AI scoring (optional) '), lines.map((t) => h('p', { class: 'muted small', style: 'margin:4px 0' }, t)));
+  }
 
   /* ---------- the News tab and the Sentiment Dashboard ---------- */
   function viewNews() {
@@ -1129,7 +1142,8 @@
       h('details', { class: 'card' }, h('summary', null, h('b', null, 'News sources '), h('span', { class: 'muted small' }, `${(d.providers || []).filter((x) => x.ok).length} of ${(d.providers || []).length} working`)),
         h('div', { style: 'overflow-x:auto' }, h('table', null, h('thead', null, h('tr', null, h('th', null, 'Source'), h('th', null, 'State'), h('th', { class: 'num' }, 'Items'), h('th', { class: 'hide-sm' }, 'Detail'))), h('tbody', null, providers))),
         h('p', { class: 'muted small', style: 'margin-bottom:0' }, 'Official: NSE corporate announcements and BSE corporate announcements. News: Business Standard, Mint, The Economic Times, Moneycontrol and The Hindu BusinessLine (public RSS feeds, headlines and links only) and Google News for each company. If a source is down the others carry on and recent items are kept. Stories link to the original; attribution is to the source named.',
-          d.ai && d.ai.enabled ? ' AI scoring: GitHub Models.' : '')),
+          ''),
+        aiNote(d.ai)),
       h('div', { class: 'card filterbar' }, h('div', { class: 'row' },
         h('label', { class: 'field' }, 'Search', h('input', { type: 'search', placeholder: 'Company, event or words', value: nf.q, oninput: (e) => { nf.q = e.target.value; draw(); } })),
         sel('Sentiment', 'tone', [['ALL', 'Any'], ['Positive', 'Positive'], ['Negative', 'Negative'], ['Neutral', 'Neutral']]),

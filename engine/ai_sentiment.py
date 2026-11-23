@@ -11,7 +11,8 @@ Safety rules:
     GITHUB_TOKEN and is never written anywhere.
   * A headline is untrusted input (it can contain instructions). The model is told to treat it as data, and the answer is accepted only as numbers and
     labels from fixed sets, validated here. Any other text in the answer is discarded.
-  * The score refines the rule-based one (an average of the two); it never creates a signal, and the page marks AI-scored stories.
+  * Shadow mode (AI_WEIGHT = 0): the score is shown beside the rule-based one and compared with it, but does not change it, until a labelled test shows it helps.
+    It never creates a signal, and the page marks AI-scored stories.
 
 Not verified: the endpoint, model name and free-tier limits below follow GitHub's public documentation but could not be exercised from this machine
 (no token with the models scope), so the job reports failures instead of hiding them. The model name is an environment variable (NEWS_AI_MODEL).
@@ -104,8 +105,12 @@ def score(titles, token, model=DEFAULT_MODEL, poster=post, log=print):
     return scores, error
 
 
-def blend(rule_sentiment, ai):
-    """The sentiment used for a story: the average of the rule-based and the model's score when the model scored it, else the rule-based one."""
-    if not ai or not isinstance(ai.get("sentiment"), (int, float)):
+AI_WEIGHT = 0.0       # shadow mode: the model's score is stored and shown beside the rule score but does not change it. Raise it only after a labelled test shows it helps.
+
+
+def blend(rule_sentiment, ai, weight=None):
+    """(sentiment used for a story, whether the model scored it). The rule score is kept as it is unless the weight is above zero (it is zero: shadow mode)."""
+    if not ai or not isinstance(ai.get("sentiment"), (int, float)) or isinstance(ai.get("sentiment"), bool):
         return rule_sentiment, False
-    return round((rule_sentiment + ai["sentiment"]) / 2), True
+    weight = AI_WEIGHT if weight is None else weight
+    return round((1 - weight) * rule_sentiment + weight * ai["sentiment"]), True

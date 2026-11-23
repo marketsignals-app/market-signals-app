@@ -108,7 +108,7 @@ def make_story(raw, now, name=None):
     title, text = raw.get("title") or "", raw.get("text") or raw.get("title") or ""
     event = classify(raw.get("desc"), f"{title} {text}")
     ai = raw.get("ai") if isinstance(raw.get("ai"), dict) else None
-    if event[0] == "general" and ai and ai.get("event") in _EVENT_BY_KEY:         # the model may name the event type when the rules found none
+    if ai_sentiment.AI_WEIGHT > 0 and event[0] == "general" and ai and ai.get("event") in _EVENT_BY_KEY:         # only when the model has a say: it may name the event the rules did not find
         event = _EVENT_BY_KEY[ai["event"]]
     key, label, _, _, prior, materiality, horizon, short_note, long_note, risk = event
     words, hits = sentiment.score_title(f"{title} {text}" if raw.get("kind") == "nse" else title)
@@ -118,7 +118,8 @@ def make_story(raw, now, name=None):
     else:
         direction = 0.6 * prior
     score = max(-100, min(100, round(direction * 100)))
-    score, ai_used = ai_sentiment.blend(score, ai)                               # the model refines the rule-based score; without it the rules stand alone
+    rule_score = score
+    score, ai_used = ai_sentiment.blend(score, ai)                               # shadow mode: the rule score stands; the model's is kept beside it
     credibility, tier = source_credibility(raw.get("source"), raw.get("kind"))
     if raw.get("kind") != "nse" and RUMOUR.search(title):
         credibility = max(20, credibility - 25)
@@ -130,7 +131,7 @@ def make_story(raw, now, name=None):
     boost = 1.15 if re.search(r"\b(record|plunge|surge|soar|crash|slump)\w*", title, re.I) else 1.0
     impact = round(min(100.0, materiality * 100 * (credibility / 100) * relevance * recency * boost))
     return {"title": title, "source": raw.get("source") or "", "link": raw.get("link") or "", "ts": raw.get("ts"), "kind": raw.get("kind") or "media",
-            "event": key, "event_label": label, "sentiment": score, "tone": "Positive" if score >= 20 else "Negative" if score <= -20 else "Neutral",
+            "event": key, "event_label": label, "sentiment": score, "rule_sentiment": rule_score, "ai_sentiment": ai["sentiment"] if ai_used else None, "tone": "Positive" if score >= 20 else "Negative" if score <= -20 else "Neutral",
             "credibility": credibility, "tier": tier, "relevance": round(relevance * 100), "impact": impact, "horizon": horizon, "words": hits,
             "short_term": short_note, "long_term": long_note, "risk": risk, "sources": [raw.get("source") or ""], "duplicates": 0, "ai": ai_used, "rumour": bool(RUMOUR.search(title)) and raw.get("kind") != "nse",
             "age_hours": round(age, 1) if age is not None else None, "recency": round(recency, 2), "symbol": raw.get("symbol"), "name": name}

@@ -86,7 +86,7 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("Official", ["Official" if s["kind"] == "nse" else "" for s in d["stories"]])
         self.assertEqual({p["name"]: p["ok"] for p in d["providers"]}, {"NSE announcements": True, "BSE announcements": False})
         self.assertEqual([r["symbol"] for r in d["divergences"]], ["B.NS"], "bad news with the price up is a divergence")
-        self.assertEqual(d["ai"], {"enabled": False, "model": None, "generated_at": None, "scored": 0})
+        self.assertEqual({k: d["ai"][k] for k in ("enabled", "model", "generated_at", "scored", "shadow", "status")}, {"enabled": False, "model": None, "generated_at": None, "scored": 0, "shadow": True, "status": None})
         self.assertIn("IT", {r["sector"] for r in d["sectors"]})
         sector_news = [s for s in d["stories"] if s["symbol"] is None]
         self.assertEqual(sector_news[0]["sector"], "Banks")
@@ -94,3 +94,18 @@ class DashboardTests(unittest.TestCase):
     def test_an_empty_world_gives_an_empty_dashboard(self):
         d = build.news_dashboard([], {}, [], {}, {}, {}, {}, None, [], NOW)
         self.assertEqual((d["stories"], d["market_tone"], d["counts"]["official_share_pct"]), ([], 0, None))
+
+
+class AiSummaryTests(unittest.TestCase):
+    def story(self, rule, ai):
+        return {"ai": ai is not None, "rule_sentiment": rule, "ai_sentiment": ai}
+
+    def test_agreement_counts_direction_only_where_both_are_clear_and_never_calls_it_accuracy(self):
+        stories = [self.story(60, 40), self.story(-50, -70), self.story(50, -30), self.story(5, 80), self.story(10, None)]
+        out = build.ai_summary(stories, {"k": {}}, {"model": "m", "generated_at": "t", "status": {"outcome": "scored"}})
+        self.assertEqual(out["agreement"], {"compared": 4, "same_direction_pct": 67, "firm_pairs": 3, "mean_abs_difference": 48.8})
+        self.assertEqual((out["shadow"], out["weight"], out["status"]), (True, 0.0, {"outcome": "scored"}))
+
+    def test_no_scores_means_no_agreement_figures(self):
+        out = build.ai_summary([self.story(10, None)], {}, None)
+        self.assertEqual(out["agreement"], {"compared": 0, "same_direction_pct": None, "firm_pairs": 0, "mean_abs_difference": None})

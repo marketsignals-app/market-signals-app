@@ -124,7 +124,8 @@ def index_alerts(events, seen, now_ts):
             seen[f"{event['name']}|{kind}|{day}"] = now_ts
         shown = [text for _, text in top]
         lines.append(f"Index, {event['name']}: {', '.join(shown)}; level {event['last']:,.2f}")
-        items.append({"kind": "index", "symbol": "", "name": event["name"], "tags": shown, "last": event["last"]})
+        items.append({"kind": "index", "symbol": "", "name": event["name"], "tags": shown, "last": event["last"],
+                      "urgent": any(kind in ("level", "move2", "move3") for kind, _ in fresh)})
     return lines, items, seen
 
 

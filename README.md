@@ -264,6 +264,47 @@ repeated.
 * **Survivorship bias:** still not resolved and never claimed to be. Free data has no delisted prices or point-in-time index membership. If
   you have such files, `tools/survivorship_probe.py` tests them with the same rules, apart from the published figures.
 
+## Scheduled Telegram feeds
+
+The combined digest is replaced by separate feeds, each on its own clock (`engine/feeds.py`, items in `engine/feed_items.py`, layout in `engine/digest_feeds.py`,
+the run in `engine/feed_run.py`). Times are IST, weekdays. The app's own alert log is unchanged: it still records every event as it happens.
+
+| Feed | Cadence | Window | Sent when |
+|---|---|---|---|
+| Indexes | 60 min | 09:15 to 15:30 | every slot while India is open (a table) |
+| Commodities and currency | 40 min | 09:00 to 23:30 | every slot, each figure with its data date and a STALE mark when older than 2 days |
+| Sector growth | 90 min | 09:15 to 15:30 | every slot: strongest and weakest sectors of our list, with the stock count behind each |
+| Movers | 30 min | market hours | only if new |
+| Bullish and bearish readings | 15 min | market hours | only if new; a reading that reversed while waiting is dropped |
+| Volatility breaches | 15 min | market hours | only if new: a stock of the main list whose move today is at least 2x its own 14-day average daily range (ATR), again at 3x; stocks with untrusted data are skipped |
+| IPO breakouts | 30 min | market hours | only if new (price crossing the listing-day high or low) |
+| Block deals | 15 min | market hours | only if new |
+| Bulk deals | daily | from 18:00 (retried for 4 hours until the NSE publishes them) | the day's largest, with the client as the NSE publishes it |
+| Important filings | 15 min | 08:00 to 22:00 | official NSE and BSE filings with a rule-based impact of 70 or more, once each |
+| Company headlines | 60 min | 09:00 to 21:00 | only if new |
+| News and sentiment | 60 min | 09:30 to 21:30 | most positive and most negative news by rule-based sentiment (not a signal) |
+| Upcoming IPOs | daily 09:00 | | open now, closing today, opening within 7 days, listing within 3 days |
+| Today's events | daily 08:30 | | confirmed results, ex-dates and the like |
+| Weekly summary | Sunday 18:00 | | track record, learning outlook (still "no better than the base rate"), data health |
+
+Sent at once, outside the schedule: urgent index and volatility alerts (an Indian index move of 2% or more, India VIX past 20 or 25; global indexes are no longer alerted), the existing pre-open and post-close
+briefs, replies when a tracked call reaches its target or stop, and a change of the market-conditions label.
+
+How the timing works: each feed's window is cut into slots from its start (a 40-minute feed that starts at 09:00 has slots at 09:00, 09:40, 10:20 and so on). The first run inside a
+slot sends the feed once; a missed slot is not replayed after the next one begins. Runs happen about every 10 minutes and GitHub's scheduler is best-effort, so a feed arrives within
+about 10 to 20 minutes of its slot, not on the exact minute. Which slot was last sent is kept in the sent-alert memory on the `data` branch, so a failed run cannot send a slot twice, and
+a feed whose Telegram send failed keeps its items and is tried again. On the first run with this scheme nothing is sent: every feed starts with its next slot.
+
+Message styles, so a message reads quickly: **A** a numbered heading with indented sub-points (readings, filings, volatility alert, IPOs, events, weekly summary); **B** one numbered
+line per item with the figures inline (movers, IPO breakouts, deals, headlines); **C** a monospace table (indexes, commodities, sectors). Every entry carries hashtags (the stock symbol such as
+`#AXISBANK` or `#M_M`, the kind of alert, the sector) for searching in Telegram. Every snapshot names its source and time.
+
+Change a cadence or window without code in `config/alerts.json`, for example `{"feeds": {"movers": {"every": 20}, "sectors": {"enabled": false}}}`. Set `"scheduled_feeds": false`
+there to return to the single digest per run.
+
+Operator messages (optional): add the secret `TELEGRAM_ADMIN_CHAT_ID` (a private chat with the bot) to get a message when a data source is degraded or stocks are paused, and when
+a run fails (the failed run publishes nothing and the site stays on the last good build). These never go to the public channel.
+
 ## Alerts: fairness and block deals
 
 See `docs/alerts-audit-2026-11-17.md`. A stock gets at most 2 headline alerts a day, repeated stories are skipped, and the stocks alerted
@@ -275,7 +316,7 @@ tracked or not, as soon as they appear. Only the 122 tracked stocks (plus new li
 Details and evidence: `docs/audit-followup-2026-11-16.md`.
 
 * `python tools/verify_market_data.py --volume` checks the deployed prices (and NSE volumes) against the NSE end-of-day file, same session only. Not-yet-published references give UNVERIFIED, never a pass or a fail.
-* `python tools/check_production.py --cache signals-v40` reads what the deployed site published (data freshness, the NSE feed
+* `python tools/check_production.py --cache signals-v41` reads what the deployed site published (data freshness, the NSE feed
   as the Actions run saw it, stale handling, the service-worker cache name) and prints PASS, FAIL or UNVERIFIED for each. It cannot read
   the Actions logs, which need a login, so "error logged" stays UNVERIFIED unless you read the run log yourself.
 * `python tools/strategy_report.py` measures the two rules against buy-and-hold (drawdown, downside deviation, Sharpe, Sortino,
@@ -400,8 +441,10 @@ are kept in `state.json`, so recent stories survive an outage. Every story keeps
 **Optional language-model scoring.** GitHub Pages only serves static files, so a model cannot run on the site. A separate scheduled job
 (`.github/workflows/news-ai.yml`, `engine/news_ai.py`, `engine/ai_sentiment.py`) asks a hosted model (GitHub Models, the free rate-limited tier, with the job's own
 `GITHUB_TOKEN` and the permission `models: read`; model name in the repository variable `NEWS_AI_MODEL`, default `openai/gpt-4o-mini`) about new headlines only, in batches of 25, and
-stores each answer under a hash of the headline on the `data` branch. The 10-minute build averages the model's score with the rule-based one and marks the story "AI-scored". If the
-model is unavailable, over its limit or answers badly, the rule-based score stands alone. Headlines are untrusted input (the prompt treats them as data and only numbers and labels
+stores each answer under a hash of the headline on the `data` branch. The 10-minute build reads those scores in **shadow mode** (`ai_sentiment.AI_WEIGHT = 0`): the model's score is shown beside the rule-based one ("AI view +55") and
+compared with it (direction agreement and mean difference, on the News tab), but it changes no sentiment, reading or alert. It may be given a weight only after a labelled test shows it helps;
+agreement between the two is not accuracy. Each run writes `news-ai/status.json` (what was read, how many scored, the stop reason), which the News tab shows, so the reason for "no AI scores" is
+visible without opening the job log. If the model is unavailable, over its limit or answers badly, the rule-based score stands alone. Headlines are untrusted input (the prompt treats them as data and only numbers and labels
 from fixed sets are accepted), nothing but the headline text is sent, and no key is stored. The endpoint, limits and permission could not be exercised from the development machine:
 check the first run's log. Turn it off with the repository variable `NEWS_AI` = `off`.
 
@@ -489,7 +532,7 @@ Then open http://127.0.0.1:8765/. Python 3.10+ and Node 18+ are the only require
 
 ## How the signals work
 
-* **Short-term (weeks):** trend (20/50-day averages), MACD, RSI, volume and volume pressure. News is not part of it.
+* **Short-term (weeks):** trend (20/50-day averages), MACD, RSI, volume and volume pressure, plus a small optional news-tone part (5 of 105 points, left out when there is no news, so coverage is unchanged). News alone never produces a reading.
 * **Smooth scoring:** every part of a score changes gradually with the price (for example 5% above or below the 200-day
   average counts as the full +1 or -1). A stock sitting on an average therefore scores near zero and its reading cannot flip
   between two extremes when the price ticks across the line.

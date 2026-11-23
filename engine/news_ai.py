@@ -25,6 +25,7 @@ from engine import ai_sentiment, fetch, ledger_git, news_intel, news_sources    
 RECENT_HOURS = 96
 SKIP_EVENTS = {"routine", "investor_call", "volume"}
 RAW_URL = "https://raw.githubusercontent.com/{repo}/data/news-ai/scores-recent.json"
+STATUS_URL = "https://raw.githubusercontent.com/{repo}/data/news-ai/status.json"
 
 
 def load_scores(repo, previous, getter=fetch.http_get):
@@ -39,6 +40,17 @@ def load_scores(repo, previous, getter=fetch.http_get):
     if isinstance(previous, dict) and previous.get("v") == 1 and isinstance(previous.get("scores"), dict):
         return previous["scores"], {"model": previous.get("model"), "generated_at": previous.get("generated_at"), "n": len(previous["scores"])}
     return {}, None
+
+
+def load_status(repo, getter=fetch.http_get):
+    """What the last job run did ({"at", "model", "read", "worth_scoring", "already_scored", "attempted", "scored", "outcome", "error"}), or None. Never raises."""
+    if not repo:
+        return None
+    try:
+        data = json.loads(getter(STATUS_URL.format(repo=repo), retries=1, timeout=30))
+    except Exception:
+        return None
+    return data if isinstance(data, dict) and data.get("v") == 1 else None
 
 
 def candidates(items, index, now):
@@ -95,10 +107,30 @@ def main(argv=None):
             stored = {}
     todo = [(k, t, s) for k, t, s in wanted if k not in stored][: args.max_requests * ai_sentiment.BATCH]
     print(f"{len(stored)} headlines already scored, {len(todo)} new ones to score")
-    if args.dry_run or not todo:
+    status = {"v": 1, "at": now.isoformat(timespec="seconds"), "model": model, "read": len(items), "worth_scoring": len(wanted), "already_scored": len(stored),
+              "attempted": len(todo), "scored": 0, "outcome": None, "error": None}
+
+    def record(outcome, error=None, scored=0):
+        """Write the run's outcome next to the scores, so the site can say why there are (or are not) AI scores without anyone reading the job log."""
+        status.update(outcome=outcome, error=error, scored=scored)
+        if base is None or args.dry_run:
+            return
+        base.mkdir(parents=True, exist_ok=True)
+        (base / "status.json").write_text(json.dumps(status, separators=(",", ":")), encoding="utf-8")
+        if remote:
+            try:
+                ledger_git.publish(folder, f"News AI status {status['at']}", token=token or None)
+            except (ledger_git.GitError, OSError) as err:
+                print("Status not saved:", err)
+
+    if args.dry_run:
+        return 0
+    if not todo:
+        record("nothing new to score")
         return 0
     if not token:
         print("No GITHUB_TOKEN with the models scope: nothing scored. The build keeps using the rule-based score.")
+        record("no token")
         return 0
 
     scores, error = ai_sentiment.score([t for _, t, _ in todo], token, model)
@@ -108,7 +140,11 @@ def main(argv=None):
         k = todo[index_][0]
         fresh[k] = {"sentiment": value["sentiment"], "label": value["label"], "event": value["event"], "at": stamp}
     print(f"{len(fresh)} of {len(todo)} headlines scored" + (f"; stopped on: {error}" if error else ""))
+    if not (base and fresh):
+        record("stopped: " + error if error else "model returned no usable scores", error, len(fresh))
+        return 0
     if base and fresh:
+        status.update(outcome="scored" + (" (stopped early)" if error else ""), error=error, scored=len(fresh))
         base.mkdir(parents=True, exist_ok=True)
         with open(base / f"scores-{now.strftime('%Y-%m')}.jsonl", "a", encoding="utf-8", newline="\n") as handle:
             for k, v in fresh.items():
@@ -116,6 +152,7 @@ def main(argv=None):
         cutoff = (now - timedelta(hours=RECENT_HOURS)).isoformat(timespec="seconds")
         merged = {k: v for k, v in {**stored, **fresh}.items() if v.get("at", stamp) >= cutoff}
         (base / "scores-recent.json").write_text(json.dumps({"v": 1, "model": model, "generated_at": stamp, "scores": merged}, separators=(",", ":")), encoding="utf-8")
+        (base / "status.json").write_text(json.dumps(status, separators=(",", ":")), encoding="utf-8")
         if remote:
             pushed = ledger_git.publish(folder, f"News AI scores {stamp}", token=token or None)
             print("Published to the data branch" if pushed else "Nothing new to publish")

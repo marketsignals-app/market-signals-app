@@ -3,6 +3,7 @@
 Usage: python -m engine.build --out site [--prev SITE_URL_OR_DIR] [--limit N]
 """
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -15,7 +16,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from . import digest, event_news, events, market as market_view, verify
-from . import alert_memory, ledger_git, manifest, ai_sentiment, catalog, data_learning, evidence, learning, news_ai, news_intel, news_sources, nse_live, sentiment, provenance, statements, universe_sync, alerts, backtest, costs, deals_live, sessions, wide, discover, membership as index_membership, official, dividends, exchange, fetch, fundamentals, ipo_gmp, ledger, news, patterns, risk, signals, tracking
+from . import alert_memory, digest_feeds, feed_items, feed_run, feeds, ledger_git, manifest, ai_sentiment, catalog, data_learning, evidence, learning, news_ai, news_intel, news_sources, nse_live, sentiment, provenance, statements, universe_sync, alerts, backtest, costs, deals_live, sessions, wide, discover, membership as index_membership, official, dividends, exchange, fetch, fundamentals, ipo_gmp, ledger, news, patterns, risk, signals, tracking
 
 ROOT = Path(__file__).resolve().parent.parent
 WORKERS = 6
@@ -119,6 +120,17 @@ def apply_news_context(record, sector_moves):
     intel["validation"] = news_intel.validate(intel, reading_side(((record.get("short") or {}).get("label"))))
 
 
+def ai_summary(stories, ai_scores, ai_meta):
+    """What the optional model job has done and how its scores compare with the rule-based ones (agreement is not accuracy: there is no labelled truth yet)."""
+    both = [s for s in stories if s.get("ai_sentiment") is not None and s.get("rule_sentiment") is not None]
+    firm = [s for s in both if abs(s["rule_sentiment"]) >= 20 and abs(s["ai_sentiment"]) >= 20]
+    meta = ai_meta or {}
+    return {"enabled": bool(ai_scores), "model": meta.get("model"), "generated_at": meta.get("generated_at"), "scored": sum(1 for s in stories if s["ai"]),
+            "shadow": ai_sentiment.AI_WEIGHT == 0, "weight": ai_sentiment.AI_WEIGHT, "status": meta.get("status"),
+            "agreement": {"compared": len(both), "same_direction_pct": round(100 * sum(1 for s in firm if (s["rule_sentiment"] > 0) == (s["ai_sentiment"] > 0)) / len(firm)) if firm else None,
+                          "firm_pairs": len(firm), "mean_abs_difference": round(sum(abs(s["rule_sentiment"] - s["ai_sentiment"]) for s in both) / len(both), 1) if both else None}}
+
+
 def news_dashboard(records, pool, market_items, names, sector_moves, provider_status, ai_scores, ai_meta, archive, now, limit=80):
     """The News tab's data: the most important stories across the market, sector sentiment, stocks where price and news disagree, and the providers' state."""
     by_symbol = {r["symbol"]: r for r in records}
@@ -135,7 +147,7 @@ def news_dashboard(records, pool, market_items, names, sector_moves, provider_st
         for s in unique:
             if s["impact"] >= 20:
                 stories.append({**{k: s[k] for k in ("title", "source", "link", "ts", "kind", "event_label", "tone", "sentiment", "credibility", "impact", "horizon", "sources",
-                                                     "duplicates", "ai", "short_term", "long_term", "risk", "age_hours")},
+                                                     "duplicates", "ai", "ai_sentiment", "rule_sentiment", "short_term", "long_term", "risk", "age_hours")},
                                 "symbol": symbol, "name": names.get(symbol), "sector": sector, "tracked": rec is not None,
                                 "interpretation": ((rec or {}).get("news_intel") or {}).get("interpretation")})
     for r in market_items:
@@ -143,7 +155,7 @@ def news_dashboard(records, pool, market_items, names, sector_moves, provider_st
         sector = news_intel.sector_of_text(r["title"])
         if s["impact"] >= 15 and sector:
             stories.append({**{k: s[k] for k in ("title", "source", "link", "ts", "kind", "event_label", "tone", "sentiment", "credibility", "impact", "horizon", "sources",
-                                                 "duplicates", "ai", "short_term", "long_term", "risk", "age_hours")}, "symbol": None, "name": None, "sector": sector, "tracked": False, "interpretation": None})
+                                                 "duplicates", "ai", "ai_sentiment", "rule_sentiment", "short_term", "long_term", "risk", "age_hours")}, "symbol": None, "name": None, "sector": sector, "tracked": False, "interpretation": None})
     stories.sort(key=lambda s: -(s["impact"] * max(0.2, 0.5 ** ((s["age_hours"] or 0) / 36.0))))
     stories = stories[:limit]
     with_intel = [r for r in records if r.get("news_intel")]
@@ -166,7 +178,7 @@ def news_dashboard(records, pool, market_items, names, sector_moves, provider_st
             "providers": [{"name": k, "ok": v["ok"], "items": v.get("items", 0), "error": v.get("error"), "fetched_at": v.get("fetched_at")} for k, v in provider_status.items()],
             "counts": {"archive_items": len(archive), "stocks_with_news": len(pool), "stories_shown": len(stories), "duplicates_removed": duplicates_removed, "raw_stock_items": total_raw,
                        "official_share_pct": round(100 * official / len(stories)) if stories else None},
-            "ai": {"enabled": bool(ai_scores), "model": (ai_meta or {}).get("model"), "generated_at": (ai_meta or {}).get("generated_at"), "scored": sum(1 for s in stories if s["ai"])}}
+            "ai": ai_summary(stories, ai_scores, ai_meta)}
 
 
 def learning_age_ok(learned, now):
@@ -692,6 +704,7 @@ def run(args):
     for item in news_archive:
         (news_pool.setdefault(item["symbol"], []).append(item) if item.get("symbol") else news_market.append(item))
     ai_scores, ai_meta = news_ai.load_scores(repo_name, load_previous(args.prev, "news_ai.json"))
+    ai_meta = {**(ai_meta or {}), "status": news_ai.load_status(repo_name)}
     print(f"News: {len(news_archive)} items kept, {len(news_pool)} stocks with news, {len(ai_scores)} AI scores, providers: "
           + ", ".join(f"{k} {'ok' if v['ok'] else 'down'}" for k, v in provider_status.items()))
     ctx = {"now": now, "today": today, "now_ts": int(now.timestamp()), "delivery": delivery, "deals": deals, "bench": bench,
@@ -821,6 +834,7 @@ def run(args):
             names.update(discover.nse_company_names(fetch.http_get(discover.NSE_LIST_URL).decode("utf-8", "replace")))
         except fetch.FetchError:
             pass
+    news_dash = news_dashboard(records, news_pool, news_market, names, sector_moves, provider_status, ai_scores, ai_meta, news_archive, now)
     deal_lines, deal_items, deal_seen = alerts.deal_alerts(live_deals["deals"], state.get("deal_seen"), names, now_ts, deals_live.today_ist(now))
     lines, items = alerts.merge_deals(lines, items, deal_lines, deal_items)
     wide_names = {s["symbol"]: s["name"] for s in wide_list}
@@ -873,16 +887,48 @@ def run(args):
     def link_for_symbol(symbol, section="signals"):
         return alerts.stock_link(site_url, symbol, section) if site_url else None
 
-    calls = tracking.make_calls(items, {x["symbol"]: x for x in records}, now_ts)
-    if lines and token and chat:
-        links = [link_for_symbol(i["symbol"], "news" if i["kind"] == "news" and i["symbol"] in by_symbol else "signals") if i["symbol"] in market_of else None for i in items]
-        for message, start, end in digest.render(items, links, now_ts):
-            ok, message_id = send_formatted(token, chat, message)
-            print(f"Telegram alert {'sent' if ok else 'failed'} ({end - start} alerts)")
-            if ok:
-                tracking.attach_message(calls, end, message_id, start)
-    elif lines:
-        print("New alerts are in the app. Telegram is not set up (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID).")
+    by_record = {x["symbol"]: x for x in records}
+
+    def link_of(item):
+        symbol = item.get("symbol")
+        if not symbol or symbol not in market_of:
+            return None
+        return link_for_symbol(symbol, "news" if item["kind"] == "news" and symbol in by_symbol else "signals")
+
+    if alert_cfg.get("scheduled_feeds", True):
+        # scheduled feeds: each kind of alert goes out on its own cadence (engine/feeds.py); the app's alert log above is unchanged
+        extra = []
+        filings, filing_seen = feed_items.filing_entries(news_dash["stories"], state.get("filing_seen"), now_ts, names=names)
+        extra += [] if first_run else filings
+        breaches, vol_seen = feed_items.volatility_breach_items(records, quotes, "IN" in open_now, state.get("vol_seen"), now_ts, today_ist, skip=set(disputed) | set(lagging))
+        extra += [] if first_run else breaches
+        regime, regime_label = feed_items.regime_entry(conditions, state.get("regime_seen"))
+        extra += [regime] if regime else []
+
+        def bulk_payload():
+            payload, nse["deals"] = sessions.Source("NSE large deals", sessions.LARGE_DEALS).fetch(now, nse.get("deals"))
+            return payload
+
+        sources = {"indices": indices, "india_open": "IN" in open_now, "watch": (overview or {}).get("watch"), "sectors": (conditions.get("IN") or {}).get("sectors"),
+                   "news_dashboard": news_dash, "ipos": ipos.get("india") if ipos.get("india_ok") else [], "events": events_data["items"], "track_record": prev_data.get("track_record"),
+                   "learning": prev_data.get("learning"), "health": prev_data.get("data_health"), "bulk_payload": bulk_payload, "today_label": today_label, "names": names}
+        send_one = (lambda text: send_formatted(token, chat, text)) if token and chat else None
+        feed_state, calls, _sent = feed_run.dispatch(items + extra, state, now, now_ts, feeds.settings(alert_cfg), sources, by_record, send_one, link_of, today_ist)
+        if not (token and chat) and lines:
+            print("New alerts are in the app. Telegram is not set up (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID).")
+    else:                                                 # the earlier behaviour: one digest per run (alert_cfg "scheduled_feeds": false)
+        feed_state, filing_seen, regime_label, vol_seen = {}, state.get("filing_seen"), state.get("regime_seen"), state.get("vol_seen")
+        calls = tracking.make_calls(items, by_record, now_ts)
+        if lines and token and chat:
+            links = [link_for_symbol(i["symbol"], "news" if i["kind"] == "news" and i["symbol"] in by_symbol else "signals") if i["symbol"] in market_of else None for i in items]
+            for message, start, end in digest.render(items, links, now_ts):
+                ok, message_id = send_formatted(token, chat, message)
+                print(f"Telegram alert {'sent' if ok else 'failed'} ({end - start} alerts)")
+                if ok:
+                    tracking.attach_message(calls, end, message_id, start)
+        elif lines:
+            print("New alerts are in the app. Telegram is not set up (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID).")
+    health_seen = send_health_note(state.get("health_seen"), prev_data.get("data_health"), now_ts)
 
     track_record, pending, queue, notified, outcome_lines = track(args, state, prev_data, calls, ctx, now_ts, token, chat, link_for_symbol)
     if outcome_lines:
@@ -897,13 +943,13 @@ def run(args):
                                                          "NSE official events": (bool((official_events or {}).get("ok")), (official_events or {}).get("error") or "")})
     status = status_block(config, records, errors, carried, overview, conditions, ipos, delivery, track_record, pending, token, chat, accuracy, official_events, live_deals, live_feed, live_check)
     data = {"version": 1, "generated_at": now.isoformat(timespec="seconds"), "market": overview, "conditions": conditions,
-            "status": status, "accuracy": accuracy, "live_check": live_check, "learning": learning.summary(learned), "news_intel": news_dashboard(records, news_pool, news_market, names, sector_moves, provider_status, ai_scores, ai_meta, news_archive, now), "data_health": data_learning.summary(health, quarantined), "evidence": evidence.summarise(records), "backtest_method": {"costs": costs.describe(cost_overrides), "notes": BACKTEST_NOTES}, "events": events_data, "ipos": ipos,
+            "status": status, "accuracy": accuracy, "live_check": live_check, "learning": learning.summary(learned), "news_intel": news_dash, "data_health": data_learning.summary(health, quarantined), "evidence": evidence.summarise(records), "backtest_method": {"costs": costs.describe(cost_overrides), "notes": BACKTEST_NOTES}, "events": events_data, "ipos": ipos,
             "stocks": [catalog.lite(x) for x in records], "errors": [{"symbol": e["symbol"], "error": e["error"]} for e in errors],
             "alerts": alert_log, "track_record": track_record,
             "exchange_data": {"delivery_dates": sorted(delivery)[-3:], "note": "NSE delivery data and bulk/block deals. The exchange order book (bid/ask depth) is not published for free."}}
     new_state = {"seen_alerts": seen, "delivery": delivery, "new_listings": registry,
                  "fundamentals": fund_cache, "ipo_gmp": ipo_cache, "alert_log": alert_log,
-                 "alert_sides": sides, "universe_sync": sync_state, "analysis_index": analysis_index, "wide_universe": wide_cache, "wide_cursor": wide_cursor, "mover_seen": mover_seen, "index_seen": index_seen,
+                 "alert_sides": sides, **feed_state, "filing_seen": filing_seen, "regime_seen": regime_label, "health_seen": health_seen, "vol_seen": vol_seen, "universe_sync": sync_state, "analysis_index": analysis_index, "wide_universe": wide_cache, "wide_cursor": wide_cursor, "mover_seen": mover_seen, "index_seen": index_seen,
                  "briefs_sent": {k: v for k, v in briefs_sent.items() if v == today_ist}, "nse_sources": nse, "news_alert_history": {s: v for s, v in news_history.items() if v}, "deal_seen": deal_seen,
                  "live_deals": {k: v for k, v in live_deals.items() if k != "deals"}, "eod_close": closes, "nse_live": {k: v for k, v in live_feed.items() if k != "prices"}, "statements": statements_cache, "news_providers": provider_status, "news_archive": news_archive, "data_health": health, "event_news": event_cache, "official": official_events, "ledger_pending": pending, "reply_queue": queue, "notified_outcomes": notified}
 
@@ -924,6 +970,33 @@ def run(args):
     return 0
 
 
+def send_health_note(seen, health, now_ts):
+    """Tell the operator, in a separate private chat (TELEGRAM_ADMIN_CHAT_ID), when data sources are degraded or stocks are paused, and when that clears.
+    Sent only when the picture changes, never to the public channel. Returns the state to remember. Without the secrets it does nothing."""
+    token, admin = os.environ.get("TELEGRAM_BOT_TOKEN"), os.environ.get("TELEGRAM_ADMIN_CHAT_ID")
+    text = feed_items.health_text(health)
+    digest_now = hashlib.sha1((text or "ok").encode()).hexdigest()[:12]
+    seen = seen if isinstance(seen, dict) else {}
+    if not (token and admin) or health is None or seen.get("hash") == digest_now:
+        return seen
+    message = text or "Stock Signals data health: all sources are working again."
+    ok = alerts.send_telegram(token, admin, message)
+    print("Data health note", "sent to the operator chat" if ok else "could not be sent")
+    return {"hash": digest_now, "ts": int(now_ts)} if ok else seen
+
+
+def notify_failure():
+    """Tell the operator that a run failed (called from the workflow when a step fails). Returns 0 either way: the notice must not hide the real failure."""
+    token, admin = os.environ.get("TELEGRAM_BOT_TOKEN"), os.environ.get("TELEGRAM_ADMIN_CHAT_ID")
+    if not (token and admin):
+        print("No TELEGRAM_ADMIN_CHAT_ID: the failure is not announced.")
+        return 0
+    run = f"{os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{os.environ.get('GITHUB_REPOSITORY', '')}/actions/runs/{os.environ.get('GITHUB_RUN_ID', '')}"
+    ok = alerts.send_telegram(token, admin, f"Stock Signals: the update run failed and nothing was published. The site stays on the last good build.\n{run}")
+    print("Failure notice", "sent" if ok else "could not be sent")
+    return 0
+
+
 def send_test_alert():
     """Send one test message to Telegram. Returns 0 only if it was delivered."""
     token, chat = os.environ.get("TELEGRAM_BOT_TOKEN"), os.environ.get("TELEGRAM_CHAT_ID")
@@ -938,13 +1011,14 @@ def send_test_alert():
 def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--test-alert", action="store_true", help="send a test message to Telegram and exit")
+    parser.add_argument("--notify-failure", action="store_true", help="tell the operator chat that a run failed, and exit")
     parser.add_argument("--out", default="site")
     parser.add_argument("--prev", default=os.environ.get("SITE_URL", ""), help="URL or folder holding the previous data.json/state.json")
     parser.add_argument("--ledger-dir", default="", help="keep the track-record ledger in this folder (no git); for testing")
     parser.add_argument("--ledger-remote", default="", help="git remote holding the data branch (default: this GitHub repository)")
     parser.add_argument("--limit", type=int, default=0, help="analyse only N stocks (testing)")
     args = parser.parse_args(argv)
-    return send_test_alert() if args.test_alert else run(args)
+    return notify_failure() if args.notify_failure else send_test_alert() if args.test_alert else run(args)
 
 
 if __name__ == "__main__":
