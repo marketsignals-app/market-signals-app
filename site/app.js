@@ -301,7 +301,7 @@
     [/^Recent alerts$/, 'The latest alerts the app has raised: a change in a stock\'s reading, a fresh headline about the stock, or a price reaching its reference or risk level. Use "View analysis" to open the stock.'],
     [/^World and market news/, 'Headlines about markets, interest rates, oil, geopolitics and the economy, from outside news sources. They are not checked by this app.'],
     [/^India IPOs, dates and grey-market premium/, 'Open and upcoming India IPOs with their dates, price band, lot size and subscription. Grey-market premium (GMP) is an unofficial rumour of where the shares may list, and it can be wrong. The listing price and profit or loss are illustrations only.'],
-    [/^Sentiment dashboard/, 'How the news reads across the market and sectors: sentiment from -100 to +100 and impact from 0 to 100, built from exchange filings and headlines with repeats counted once. It describes the news, not the stock, and never creates a Buy or Sell reading.'],
+    [/^Sentiment dashboard/, 'EXPERIMENTAL. A rough tone of the news across the market and sectors (-100 to +100, from a word list that has not been validated) and an impact from 0 to 100 (how important the event is, from its type, the source and how recent it is). Repeats are counted once. It describes the news, not the stock, is not used in any reading or alert, and never creates a Buy or Sell reading.'],
     [/^Recently listed stocks/, 'Stocks that have listed recently, found automatically on the NSE list. They need about 60 trading days of history before readings appear.'],
     [/^Check an IPO yourself/, 'Optional. Free sources do not publish an unlisted company\'s financials, so you type the figures here and the same fixed rules check them. It is the one place where you enter data.'],
     [/^IPO checker$/, 'Type in the figures of an IPO from its official documents and the fixed rules turn them into a reading for listing day and for holding long term. The reading is not a recommendation to apply.'],
@@ -591,7 +591,7 @@
       overview: [
         { label: 'Pressure', render: pressureText, cls: pressureClass },
         { label: 'Dividend', num: true, render: dividendCell },
-        { label: 'News', render: newsCell, hideMd: true },
+        { label: 'News tone', render: newsCell, hideMd: true },
       ],
       valuation: [
         { label: 'Mkt cap', num: true, render: (s) => big(fund(s).market_cap, s.currency) },
@@ -789,7 +789,7 @@
     const bar = h('div', { class: 'card filterbar' }, h('div', { class: 'row' },
       h('label', { class: 'field' }, 'Search', search),
       select('Reading', f.signal, [['ALL', 'Any'], ['BUY', 'Aligned bullish'], ['HOLD', 'Mixed'], ['SELL', 'Aligned bearish']], (v) => { f.signal = v; saveFilters(); updateSignals(); }),
-      select('News', f.news || 'ALL', [['ALL', 'Any'], ['Positive', 'Positive'], ['Negative', 'Negative'], ['Mixed', 'Mixed'], ['CONFIRMS', 'Confirms the reading'], ['CONFLICTS', 'Conflicts with the reading']], (v) => { f.news = v; saveFilters(); updateSignals(); }),
+      select('News tone (experimental)', f.news || 'ALL', [['ALL', 'Any'], ['Positive', 'Positive'], ['Negative', 'Negative'], ['Mixed', 'Mixed'], ['CONFIRMS', 'Agrees with the reading'], ['CONFLICTS', 'Conflicts with the reading']], (v) => { f.news = v; saveFilters(); updateSignals(); }),
       select('Sort by', f.sort, [['score', 'Indicator alignment'], ['change', 'Day change'], ['dividend', 'Dividend yield'], ['name', 'Name']].concat(['score', 'change', 'dividend', 'name'].includes(f.sort) ? [] : [[f.sort, 'Table column']]), (v) => { f.sort = v; f.dir = defaultDir(v); saveFilters(); updateSignals(); }),
       h('div', { class: 'field' }, 'Horizon', h('div', { class: 'row', style: 'gap:6px' },
         ['short', 'long', 'both'].map((hz) => h('button', { type: 'button', class: 'chip' + (f.horizon === hz ? ' on' : ''), 'aria-pressed': f.horizon === hz ? 'true' : 'false',
@@ -1046,7 +1046,7 @@
   /* ---------- news intelligence: sources, de-duplicated stories, sentiment, impact, reaction and validation ---------- */
   const TONE_CLASS = { Positive: 'buy', Negative: 'warn', Mixed: '', Neutral: '' };
   const INTERPRETATION_CLASS = { Bullish: 'buy', Bearish: 'warn', Mixed: '', Neutral: '' };
-  const VALIDATION_TEXT = { confirms: ['buy', 'News confirms the reading'], conflicts: ['warn', 'News conflicts with the reading'], neutral: ['', 'News neither confirms nor conflicts'] };
+  const VALIDATION_TEXT = { confirms: ['buy', 'Rough news tone agrees with the reading (experimental)'], conflicts: ['warn', 'Rough news tone runs against the reading (experimental)'], neutral: ['', 'Rough news tone neither agrees nor disagrees'] };
   const REACTION_TEXT = { 'price confirms': ['buy', 'Price confirms'], 'price diverges': ['warn', 'Price diverges'], 'no clear reaction': ['', 'No clear reaction'], unknown: ['', 'No price to compare'] };
   const when = (ts) => (isNum(ts) ? new Date(ts * 1000).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'time not given');
   const signedInt = (v) => (isNum(v) ? `${v > 0 ? '+' : ''}${Math.round(v)}` : '–');
@@ -1073,14 +1073,14 @@
     const [rc, rt] = REACTION_TEXT[(n.reaction || {}).state] || ['', ''];
     const f = n.fundamental || {};
     return h('section', { class: 'card wide', id: 'd-news-intel' },
-      h('h3', null, 'News intelligence ', h('span', { class: `tag ${INTERPRETATION_CLASS[n.interpretation] || ''}` }, `Interpretation: ${n.interpretation}`), ' ', h('span', { class: `tag ${vc}` }, vt)),
+      h('h3', null, 'News and rough tone (experimental) ', h('span', { class: `tag ${INTERPRETATION_CLASS[n.interpretation] || ''}` }, `Tone: ${n.interpretation}`), ' ', h('span', { class: `tag ${vc}` }, vt)),
       h('div', { class: 'kv' }, kv([['Overall sentiment', `${n.label} (${signedInt(n.sentiment)} on a scale from -100 to +100)`], ['News impact', `${n.impact} of 100`], ['Average credibility', `${n.credibility} of 100`],
         ['Fundamental impact', f.text || '–'], ['Market reaction', n.reaction ? h('span', null, h('span', { class: `tag ${rc}` }, rt), ' ', n.reaction.text) : '–']])),
       n.horizons && (n.horizons.short || n.horizons.long) ? h('p', { class: 'small' }, n.horizons.short ? h('span', null, h('b', null, 'Short term: '), n.horizons.short, ' ') : null, n.horizons.long ? h('span', null, h('b', null, 'Long term: '), n.horizons.long) : null) : null,
       h('p', { class: 'small' }, h('b', null, 'Explanation: '), n.explanation),
       (n.risks || []).length ? h('div', null, h('b', { class: 'small' }, 'Key risks'), h('ul', { class: 'clean small' }, n.risks.map((x) => h('li', null, x)))) : null,
       h('h4', null, 'Latest important news'), h('ul', { class: 'clean' }, (n.stories || []).slice(0, 6).map((st) => storyRow(st, false))),
-      h('p', { class: 'muted small', style: 'margin-bottom:0' }, (n.validation || {}).text ? `${n.validation.text} ` : '', 'This is a rule-based reading of exchange filings and headlines (event type, word list, source credibility, recency), not a language model understanding the articles, except stories marked AI-scored. News never creates a Buy or Sell reading: it is an extra check on the one the price rules gave. Headlines are shown as published, with their source and a link to the original.'));
+      h('p', { class: 'muted small', style: 'margin-bottom:0' }, (n.validation || {}).text ? `${n.validation.text} ` : '', 'This is an experimental, rule-based reading of exchange filings and headlines (event type, word list, source credibility, recency), not a language model understanding the articles, except stories marked AI-scored. The tone is not used in the Buy or Sell reading, which comes from price and volume rules only. Headlines are shown as published, with their source and a link to the original.'));
   }
 
   const newsLine = (s) => {
@@ -1209,9 +1209,11 @@
     const providers = (d.providers || []).map((x) => h('tr', null, h('td', null, x.name), h('td', null, h('span', { class: `tag ${x.ok ? 'buy' : 'warn'}` }, x.ok ? 'Working' : 'Down')),
       h('td', { class: 'num' }, x.items), h('td', { class: 'small muted hide-sm' }, x.error || (x.fetched_at ? `read ${readStamp(x.fetched_at)}` : ''))));
     const root = h('div', null,
-      h('h2', null, 'News and sentiment ', h('span', { class: 'muted small' }, `updated ${readStamp(d.generated_at)}`)),
+      h('h2', null, 'News ', h('span', { class: 'muted small' }, `updated ${readStamp(d.generated_at)}`)),
+      h('div', { class: 'card small' }, h('b', null, 'Headlines, sources and official filings are the reliable part. '),
+        'The tone score and the market tone below are experimental: they come from a word list that has not been tested against labelled headlines, so they can be wrong (for example on a fall from a record high). They are not used in any Buy or Sell reading, any Telegram alert or the track record.'),
       h('details', { class: 'card', open: true },
-        h('summary', null, h('b', null, 'Sentiment dashboard '), h('span', { class: `tag ${d.market_tone >= 20 ? 'buy' : d.market_tone <= -20 ? 'warn' : ''}` }, `Market news ${toneWord} (${signedInt(d.market_tone)})`)),
+        h('summary', null, h('b', null, 'Rough tone dashboard (experimental) '), h('span', { class: `tag ${d.market_tone >= 20 ? 'buy' : d.market_tone <= -20 ? 'warn' : ''}` }, `Market news ${toneWord} (${signedInt(d.market_tone)})`)),
         h('p', { class: 'small' }, `${cnt.stories_shown} important stories from ${cnt.stocks_with_news} stocks; ${cnt.duplicates_removed} repeated copies were not counted; ${cnt.official_share_pct === null ? 'no' : cnt.official_share_pct + '%'} are official exchange filings.`,
           d.ai && d.ai.enabled ? ` ${d.ai.scored} are also scored by a language model (${d.ai.model}, via GitHub Models).` : ' Sentiment is rule-based; no language model score is available right now.'),
         (d.sectors || []).length ? h('div', { style: 'overflow-x:auto' }, h('table', null, h('thead', null, h('tr', null, h('th', null, 'Sector'), h('th', { class: 'num' }, 'Stocks with news'), h('th', { class: 'num' }, 'Sentiment'), h('th', { class: 'num hide-sm' }, 'Impact'),
@@ -1235,16 +1237,6 @@
     return root;
   }
 
-  /* ---------- news tone: an additional, low-weight part of the short-term reading, never the source of truth ---------- */
-  function newsToneCard(s) {
-    const n = s.news_tone;
-    if (!n) return null;
-    const cls = n.label === 'positive' ? 'buy' : n.label === 'negative' ? 'warn' : '';
-    return h('section', { class: 'card wide', id: 'd-news-tone' },
-      h('h3', null, 'News tone ', h('span', { class: `tag ${cls}` }, n.label === 'positive' ? 'Leaning positive' : n.label === 'negative' ? 'Leaning negative' : 'Neutral'), h('span', { class: 'muted small' }, ` ${n.score > 0 ? '+' : ''}${n.score.toFixed(2)} from ${n.n} recent headline${n.n === 1 ? '' : 's'} (${n.positive} positive, ${n.negative} negative), confidence ${n.confidence}`)),
-      h('ul', { class: 'clean small' }, (n.items || []).map((i) => h('li', null, h('span', { class: `tag ${i.score > 0.15 ? 'buy' : i.score < -0.15 ? 'warn' : ''}` }, `${i.score > 0 ? '+' : ''}${i.score.toFixed(2)}`), ` ${i.title}`, h('span', { class: 'muted' }, ` · ${i.source || 'source unknown'}, ${ageText(i.age_min)}`)))),
-      h('p', { class: 'muted small', style: 'margin-bottom:0' }, 'Read from the words of headlines that are clearly about this company, newer ones counting more and a few headlines counted cautiously. It carries a small weight in the short-term reading (5 of 105) and none in the long-term one. A word list can misread context or sarcasm: it is an additional signal, not the source of truth, and the headlines above are shown exactly as published.'));
-  }
   const ageText = (minutes) => (!isNum(minutes) ? '' : minutes < 60 ? `${minutes} min ago` : minutes < 2880 ? `${Math.round(minutes / 60)} h ago` : `${Math.round(minutes / 1440)} days ago`);
 
   /* ---------- data health: what the app has learned about its own data ---------- */
@@ -1683,9 +1675,7 @@
     if (s.pressure && s.pressure.label.startsWith('Buying')) why.push('Buying pressure');
     if (s.lists.includes('Strong delivery buying')) why.push('Strong delivery buying');
     const ni = s.news_intel;
-    if (ni && ni.validation === 'confirms') why.push(`News confirms it (${ni.interpretation.toLowerCase()}, impact ${ni.impact})`);
     const risks = [`Moves about ${percent(pick.vol, 0)} a year`];
-    if (ni && ni.validation === 'conflicts') risks.push(`credible ${ni.interpretation.toLowerCase()} news runs against the reading (impact ${ni.impact})`);
     if (s.stop) risks.push(`volatility risk level ${signed(s.stop.pct, 1)} below the price`);
     const shortTest = (s.backtest || {}).short;
     if (shortTest && !shortTest.beats_buy_hold_oos) risks.push('the short-term rule has lagged buy-and-hold recently');

@@ -1,7 +1,7 @@
 """Checks what the DEPLOYED site actually published, as PASS / FAIL / UNVERIFIED lines.
 
     python tools/check_production.py                       # the live site
-    python tools/check_production.py --cache signals-v42   # also confirm the service-worker cache name
+    python tools/check_production.py --cache signals-v43   # also confirm the service-worker cache name
 
 It reads the live data.json (what the GitHub Actions run built) and sw.js. It cannot see the Actions logs (they need a login), so
 "error logged" is only inferred from what the run published; the lines say so. Nothing here changes anything.
@@ -69,7 +69,7 @@ def check(data, now, sw_text=None, expect_cache=None):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--data", default=SITE)
-    parser.add_argument("--cache", help="the service-worker cache name expected, for example signals-v42")
+    parser.add_argument("--cache", help="the service-worker cache name expected, for example signals-v43")
     args = parser.parse_args(argv)
     data = load_app_data(args.data)
     sw = None

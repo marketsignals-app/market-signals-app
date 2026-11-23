@@ -8,7 +8,6 @@ from . import indicators as ta
 
 SHORT_WEIGHTS = {"trend": 30, "macd": 25, "rsi": 20, "volume": 5, "pressure": 15}
 LONG_WEIGHTS = {"trend200": 35, "cross": 25, "momentum": 20, "position": 10, "volatility": 10}
-NEWS_WEIGHT = 5            # news tone is an additional, optional part of the short-term score (5 of 105); the long-term score has none (see engine/sentiment.py)
 
 BUY, SELL = 20, -20
 STRONG = 50
@@ -146,7 +145,7 @@ def buy_sell_pressure(ind, i):
     return {"value": value, "label": name, "money_flow": cmf, "up_volume_share": share}
 
 
-def short_detail(ind, i, news=None):
+def short_detail(ind, i):
     """Swing view (days to weeks): price, volume and indicators, plus news tone when given (news = (value from -1 to +1, text) from engine/sentiment.py)."""
     bars = ind["bars"]
     close, volume = bars["c"], bars["v"]
@@ -194,9 +193,7 @@ def short_detail(ind, i, news=None):
     if pressure is not None:
         c["pressure"] = (pressure["value"], f"Volume pressure: {pressure['label'].lower()} over 20 days")
 
-    if news is not None:
-        c["news"] = (clamp(news[0]), news[1])
-    return _combine_detail(c, {**SHORT_WEIGHTS, "news": NEWS_WEIGHT}, min_weight_share=0.75, optional=("news",))
+    return _combine_detail(c, SHORT_WEIGHTS, min_weight_share=0.75)
 
 
 def short_score(ind, i):

@@ -30,7 +30,7 @@ FEEDS = {
     "commodities": {"label": "Commodities and currency", "every": 40, "start": "09:00", "end": "23:30", "days": WEEKDAYS, "kind": "snapshot"},
     "sectors": {"label": "Sector growth", "every": 90, **MARKET, "kind": "snapshot"},
     "bulk_deals": {"label": "Bulk deals", "every": 1440, "start": "18:00", "end": "18:00", "days": WEEKDAYS, "grace": 240, "kind": "snapshot"},
-    "news_digest": {"label": "News and sentiment", "every": 60, "start": "09:30", "end": "21:30", "days": WEEKDAYS, "kind": "snapshot"},
+    "news_digest": {"label": "Latest important news", "every": 60, "start": "09:30", "end": "21:30", "days": WEEKDAYS, "kind": "snapshot"},
     "ipo_upcoming": {"label": "Upcoming IPOs", "every": 1440, "start": "09:00", "end": "09:00", "days": (0, 1, 2, 3, 4, 5, 6), "grace": 180, "kind": "snapshot"},
     "events_today": {"label": "Today's events", "every": 1440, "start": "08:30", "end": "08:30", "days": WEEKDAYS, "grace": 120, "kind": "snapshot"},
     "weekly": {"label": "Weekly summary", "every": 1440, "start": "18:00", "end": "18:00", "days": (6,), "grace": 360, "kind": "snapshot"},

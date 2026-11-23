@@ -270,15 +270,6 @@ def validate(intel, reading_side):
                      f"(news impact {intel['impact']}, credibility {intel['credibility']}).")}
 
 
-def tone_component(intel):
-    """(value -1..+1, text) for the small optional news part of the short-term score, from the intelligence, or None."""
-    if not intel or intel["impact"] < 10:
-        return None
-    value = max(-1.0, min(1.0, intel["sentiment"] / 100.0 * min(1.0, intel["impact"] / 60.0) * (1.0 if intel["credibility"] >= 55 else 0.5)))
-    word = {"Positive": "leaning positive", "Negative": "leaning negative", "Mixed": "mixed", "Neutral": "neutral"}[intel["label"]]
-    return value, f"News intelligence: {word} (sentiment {intel['sentiment']:+d}, impact {intel['impact']}, credibility {intel['credibility']}, {intel['n']} stor{'y' if intel['n'] == 1 else 'ies'}; rule-based, low weight)"
-
-
 # ---------- sectors and the dashboard ----------
 
 def sector_of_text(text):

@@ -109,7 +109,7 @@ def check_signals(folder):
     seen = {}
     for rec in records:
         full = not rec.get("lite")
-        for hz, weights in (("short", {**signals.SHORT_WEIGHTS, "news": signals.NEWS_WEIGHT}), ("long", signals.LONG_WEIGHTS)):
+        for hz, weights in (("short", signals.SHORT_WEIGHTS), ("long", signals.LONG_WEIGHTS)):
             block = rec.get(hz) or {}
             score, reasons = block.get("score"), block.get("reasons") or []
             symbol = rec["symbol"]

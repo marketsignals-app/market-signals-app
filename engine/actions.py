@@ -264,7 +264,7 @@ def gap_records(quotes, market_of, now_ts, today_iso, min_gap=3.0, thresholds=No
         rec = _record(kind, symbol, symbol.replace(".NS", ""), f"Opened {gap:+.1f}% from the previous close", f"Open {opening:,.2f}, previous close {previous:,.2f}, now {price:,.2f}", today_iso, now_ts,
                       "Yahoo Finance quote (delayed)", "")
         rec["id"] = make_id(kind, symbol, today_iso)
-        rec.update({"price": price, "move_pct": round(gap, 2)})
+        rec.update({"price": price, "move_pct": round(gap, 2), "open": opening, "prev_close": previous})
         out.append(rec)
     out.sort(key=lambda r: -abs(r["move_pct"]))
     return out

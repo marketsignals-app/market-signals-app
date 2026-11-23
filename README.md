@@ -292,6 +292,10 @@ the run in `engine/feed_run.py`). Times are IST, weekdays. The app's own alert l
 | Today's events | daily 08:30 | | confirmed results, ex-dates and the like |
 | Weekly summary | Sunday 18:00 | | track record, learning outlook (still "no better than the base rate"), data health |
 
+Alerts that carry numbers are tables: movers, readings (score, price, reference and risk levels), block and bulk deals, circuits, gaps, IPO breakouts, volatility breaches,
+upcoming IPOs, ex-dates, index alerts, the weekly track record and the numbers of a target or stop reply. Each table is a monospace block with its source line and the hashtags (stock
+symbols, kind of alert; at most 25 per table). Text alerts (filings, corporate actions, headlines) keep a numbered heading with sub-points. News links show as "Read article".
+
 Movers are shown in two sections, rising and falling, and tagged `#Surge` at +10% or more and `#Crash` at -10% or less.
 
 **Announcements tab (website).** A separate tab lists all of these events for the last 7 days, newest first, with filters by group and type, a search box and a main-list-only switch:
@@ -329,7 +333,7 @@ tracked or not, as soon as they appear. Only the 122 tracked stocks (plus new li
 Details and evidence: `docs/audit-followup-2026-11-16.md`.
 
 * `python tools/verify_market_data.py --volume` checks the deployed prices (and NSE volumes) against the NSE end-of-day file, same session only. Not-yet-published references give UNVERIFIED, never a pass or a fail.
-* `python tools/check_production.py --cache signals-v42` reads what the deployed site published (data freshness, the NSE feed
+* `python tools/check_production.py --cache signals-v43` reads what the deployed site published (data freshness, the NSE feed
   as the Actions run saw it, stale handling, the service-worker cache name) and prints PASS, FAIL or UNVERIFIED for each. It cannot read
   the Actions logs, which need a login, so "error logged" stays UNVERIFIED unless you read the run log yourself.
 * `python tools/strategy_report.py` measures the two rules against buy-and-hold (drawdown, downside deviation, Sharpe, Sortino,
@@ -428,8 +432,9 @@ stock. Fundamentals carry the period they describe (`most_recent_quarter`) as we
 ## News intelligence and sentiment
 
 The **News** tab (and the News card on every stock) reads official announcements and headlines, de-duplicates them, scores them, and compares them with the
-price, volume and sector. It is a **validation layer**: it confirms, conflicts with or says nothing about the reading the price rules gave, and it never
-creates a Buy or Sell reading (a reading needs its price and volume parts; news is an optional 5 of 105 in the short-term score only).
+price, volume and sector. The reliable parts are the headlines, their sources and times, official filings and the event type (from the exchange's own category). The tone score
+and the market tone are **experimental** (a word list, not validated) and are shown on the website only, marked as such: they are not part of any reading, any Telegram alert or the
+track record. A reading comes from price and volume rules alone.
 
 | Source | What it gives | Notes |
 |---|---|---|
@@ -463,13 +468,12 @@ check the first run's log. Turn it off with the repository variable `NEWS_AI` = 
 
 ## News tone and the data learning loop
 
-**News tone (an additional parameter, not the source of truth).** `engine/sentiment.py` reads the words of recent headlines that are clearly about the
-company (a financial word list with negation, phrases and intensity words, newer headlines counting more, duplicates once, pulled toward zero when there
-are few) and gives a tone from -1 to +1. It is an optional part of the **short-term** reading only, with weight 5 of 105 (at most about 10 points at the
-extremes of the score, usually 1 to 3), and is recorded with each tracked call so the Track record tab can show whether readings the news supported did
-better than readings it opposed. Backtests cannot include it (there is no historical news), so they use the price and volume rule alone. A word list
-reads words, not meaning, and its accuracy was not measured against labelled data: treat it as a rough extra signal. Headlines are still shown exactly as
-published. This replaces the earlier rule that news was never part of a reading.
+**Rough news tone (experimental, website only).** `engine/sentiment.py` scores a headline from -1 to +1 with a financial word list (negation, phrases with the longest
+phrase winning, intensity words). It feeds the rough-tone figures on the News tab, the stock page and the readings table, each labelled experimental. It was part of the short-term
+reading (5 points) until 23 Nov 2026 and was removed because it had never been tested against labelled headlines; an example the Telegram digest exposed was "retreat sharply from record
+highs" scoring positive (fixed, but the list is still a list). A word list reads words, not meaning. Telegram carries no tone at all: the hourly "Latest important news" feed is headlines
+from the news outlets ranked by impact (the importance of the event type, the outlet's credibility and recency), and filings show their importance, not a tone. Headlines are shown exactly as
+published. A trained or pretrained model would need a labelled test set first (see the Learning section).
 
 **Data learning loop** (`engine/data_learning.py`, state kept in `state.json`). Every run records which stocks had data incidents (a series missing the
 newest session, a feed behind the NSE file, a price the NSE file or live snapshot disputes, a stale input, a carried record) and whether each source
@@ -545,7 +549,7 @@ Then open http://127.0.0.1:8765/. Python 3.10+ and Node 18+ are the only require
 
 ## How the signals work
 
-* **Short-term (weeks):** trend (20/50-day averages), MACD, RSI, volume and volume pressure, plus a small optional news-tone part (5 of 105 points, left out when there is no news, so coverage is unchanged). News alone never produces a reading.
+* **Short-term (weeks):** trend (20/50-day averages), MACD, RSI, volume and volume pressure. News is not part of it.
 * **Smooth scoring:** every part of a score changes gradually with the price (for example 5% above or below the 200-day
   average counts as the full +1 or -1). A stock sitting on an average therefore scores near zero and its reading cannot flip
   between two extremes when the price ticks across the line.

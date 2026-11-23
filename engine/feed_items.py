@@ -137,7 +137,8 @@ def index_alert_entry(item, now):
     if vix:
         points.append("Calm is below 15, above 20 means larger swings, above 25 is fearful")
     return {"kind": "entry", "urgent": True, "title": "VOLATILITY ALERT" if vix else "INDEX ALERT", "heading": f"{name} {item.get('last', 0):,.2f}",
-            "points": points + [f"Source: NSE all-indices feed, {_stamp(now)}"], "tags": tags("#Volatility" if vix else "#IndexMove", word_tag(name))}
+            "points": points + [f"Source: NSE all-indices feed, {_stamp(now)}"], "tags": tags("#Volatility" if vix else "#IndexMove", word_tag(name)),
+            "stats": {"name": name, "last": item.get("last"), "tags": list(item.get("tags", [])), "hint": "Calm is below 15, above 20 means larger swings, above 25 is fearful" if vix else None, "source": f"NSE all-indices feed, {_stamp(now)}"}}
 
 
 def filing_entries(stories, seen, now_ts, min_impact=MIN_FILING_IMPACT, limit=6, names=None):
@@ -191,7 +192,9 @@ def upcoming_ipo_entries(rows, today, horizon_days=7, limit=10):
             points.append(f"Subscription so far: {r['subscription']:.2f}x")
         points.append(f"Grey-market premium (unofficial): {r['gmp_pct']:+.1f}%" if isinstance(r.get("gmp_pct"), (int, float)) else "Grey-market premium: not available")
         out.append(((opens or today), {"kind": "entry", "title": "UPCOMING IPOS", "heading": f"{r.get('name')} ({r.get('board') or 'IPO'})", "points": points,
-                                       "tags": tags("#IPO", "#UpcomingIPO", "#SME" if r.get("board") == "SME" else None), "link": r.get("link") or ""}))
+                                       "tags": tags("#IPO", "#UpcomingIPO", "#SME" if r.get("board") == "SME" else None), "link": r.get("link") or "",
+                                       "stats": {"name": r.get("name"), "status": status, "open": r.get("open"), "close": r.get("close"), "listing": r.get("listing"), "price": r.get("price"),
+                                                 "lot": r.get("lot"), "size_cr": r.get("size_cr"), "sub": r.get("subscription"), "gmp_pct": r.get("gmp_pct")}}))
     out.sort(key=lambda x: x[0])
     return [item for _, item in out[:limit]]
 
@@ -230,7 +233,10 @@ def weekly_entries(track_record, learning_summary, health):
         if n:
             points.append(f"Reached target {overall.get('target_pct')}% · hit the risk level {overall.get('stop_pct')}% · expired {overall.get('expired_pct')}%")
             points.append("Fewer than %s settled calls: too few to read a rate from" % track_record.get("min_sample") if not overall.get("reliable") else "Enough settled calls to read a rate, with its range on the Record tab")
-        out.append({"kind": "entry", "title": "WEEKLY SUMMARY", "heading": "Track record", "points": points, "tags": tags("#Weekly", "#TrackRecord")})
+        kv = [["Settled calls", str(n)], ["Still open", str(track_record.get("open", 0))], ["Voided (price never traded)", str(track_record.get("void", 0))]]
+        if n:
+            kv += [["Reached target", f"{overall.get('target_pct')}%"], ["Hit the risk level", f"{overall.get('stop_pct')}%"], ["Expired", f"{overall.get('expired_pct')}%"]]
+        out.append({"kind": "entry", "title": "WEEKLY SUMMARY", "heading": "Track record", "points": points[1:], "tags": tags("#Weekly", "#TrackRecord"), "stats": {"kv": kv}})
     validation = (learning_summary or {}).get("validation") or {}
     if validation:
         points = []
@@ -249,27 +255,26 @@ def weekly_entries(track_record, learning_summary, health):
 
 
 # ---------- style B: lines ----------
-def news_digest_lines(dashboard, seen=None, now_ts=0, limit=4):
-    """The hourly news and sentiment lines: the most positive and most negative stocks by rule-based sentiment (not signals), each with the headline behind the score.
-
-    A stock whose top headline was already listed in the last 24 hours is left out, so the hour-to-hour list shows what is new. `seen` is {key: ts}; each item carries a
-    `digest_key` that the sender records once the message is delivered."""
+def news_digest_lines(dashboard, seen=None, now_ts=0, limit=8, min_impact=40):
+    """The hourly digest: the latest important headlines about listed companies from the news outlets, as published, ranked by impact (the importance of the event type,
+    the outlet's credibility and how recent it is). It carries no tone or score: official filings have their own feeds. A headline already listed in the last 24 hours is left
+    out. `seen` is {key: ts}; each item carries a `digest_key` that the sender records once the message is delivered."""
     seen = seen or {}
+    rows = [s for s in (dashboard or {}).get("stories") or [] if s.get("symbol") and s.get("kind") == "media" and (s.get("impact") or 0) >= min_impact and s.get("title")]
+    rows.sort(key=lambda s: (-(s.get("impact") or 0), s.get("age_hours") if isinstance(s.get("age_hours"), (int, float)) else 1e9))
     out = []
-    for title, rows in (("MOST POSITIVE NEWS", (dashboard or {}).get("top_positive")), ("MOST NEGATIVE NEWS", (dashboard or {}).get("top_negative"))):
-        shown = 0
-        for r in rows or []:
-            headline = (r.get("headline") or "").strip()
-            key = hashlib.sha1(f"{r.get('symbol')}|{headline or r.get('sentiment')}".encode()).hexdigest()[:16]
-            if shown >= limit or (key in seen and now_ts - seen[key] <= 86400):
-                continue
-            shown += 1
-            move = f" · price {_signed(r.get('change_pct'))}" if isinstance(r.get("change_pct"), (int, float)) else ""
-            reading = r.get("reading")
-            check = {"confirms": f" · agrees with our reading ({reading})" if reading else " · agrees with our reading", "conflicts": f" · runs against our reading ({reading})" if reading else " · runs against our reading"}.get(r.get("validation"), "")
-            said = f"{headline[:110]}{'…' if len(headline) > 110 else ''} ({r.get('headline_source') or 'source unknown'}) · " if headline else ""
-            out.append({"kind": "line", "title": title, "text": f"{r.get('name')} · {said}sentiment {r.get('sentiment'):+d}, impact {r.get('impact')}{move}{check}",
-                        "tags": tags(symbol_tag(r.get("symbol")), "#News"), "link": "", "digest_key": key})
+    for s in rows:
+        key = hashlib.sha1(f"{s['symbol']}|{s['title']}".encode()).hexdigest()[:16]
+        if key in seen and now_ts - seen[key] <= 86400:
+            continue
+        hours = s.get("age_hours")
+        age = "time unknown" if not isinstance(hours, (int, float)) else f"{round(hours * 60)} min ago" if hours < 1.5 else f"{round(hours)} h ago"
+        title = s["title"].strip()
+        label = s.get("event_label") or "News"
+        out.append({"kind": "line", "title": "LATEST IMPORTANT NEWS", "text": f"{s.get('name') or symbol_tag(s['symbol']).lstrip('#')} · {label} · {title[:120]}{'…' if len(title) > 120 else ''} ({s.get('source') or 'source unknown'}, {age})",
+                    "tags": tags(symbol_tag(s["symbol"]), word_tag(label), "#News"), "link": s.get("link") or "", "digest_key": key})
+        if len(out) >= limit:
+            break
     return out
 
 
@@ -310,7 +315,8 @@ def volatility_breach_items(records, quotes, india_open, seen, now_ts, today_iso
                                  f"Price \u20b9{price:,.2f}; previous close \u20b9{previous:,.2f}",
                                  "A move beyond twice the normal daily range: unusually large for this stock",
                                  f"Source: Yahoo Finance quote (delayed), range from completed daily candles"],
-                      "tags": tags(symbol_tag(r["symbol"]), "#VolatilityBreach", "#Volatility", word_tag(r.get("sector"))), "symbol": r["symbol"]})
+                      "tags": tags(symbol_tag(r["symbol"]), "#VolatilityBreach", "#Volatility", word_tag(r.get("sector"))), "symbol": r["symbol"],
+                      "stats": {"move": move, "move_pct": change, "ratio": ratio, "price": price, "previous": previous, "atr": atr}})
     return items, seen
 
 
@@ -350,13 +356,16 @@ def action_alert_items(records, seen, now_ts, baseline=False):
             items.append({"kind": "entry", "feed": "corp_actions", "title": "CORPORATE ACTIONS", "heading": f"{r['name']}: {r['label']}", "points": points,
                           "tags": tags(symbol_tag(r["symbol"]), word_tag(r["label"]), "#CorporateAction"), "link": r.get("link") or "", "symbol": r["symbol"]})
             continue
+        stats = None
         if kind in ("upper_circuit", "lower_circuit"):
+            stats = {"band": r["band"], "price": r["price"], "move_pct": r["move_pct"], "turnover": r["turnover"]}
             text = f"{r['name']} · {r['label']} ({r['band']:g}% band) · \u20b9{r['price']:,.2f} · {r['move_pct']:+.1f}% · turnover \u20b9{r['turnover'] / 1e7:,.1f} cr"
         elif kind in ("gap_up", "gap_down"):
+            stats = {"gap_pct": r["move_pct"], "price": r["price"], "open": r.get("open"), "prev": r.get("prev_close")}
             text = f"{r['name']} · {r['title']} · now \u20b9{r['price']:,.2f}"
         else:
             text = f"{r['name']} · {r['title']}"
-        items.append({"kind": "line", "feed": feed, "title": title, "text": text, "tags": tags(symbol_tag(r["symbol"]), hashtag), "symbol": r["symbol"]})
+        items.append({"kind": "line", "feed": feed, "title": title, "text": text, "tags": tags(symbol_tag(r["symbol"]), hashtag), "symbol": r["symbol"], "stats": stats})
     return items, seen
 
 
@@ -367,7 +376,8 @@ def action_dates_entries(records, today, days=7, limit=12):
     for when, key, r in actions.upcoming_dates(records, today, days)[:limit]:
         what = "ex-date" if key == "ex_date" else "record date"
         out.append({"kind": "entry", "title": "SHARE ACTIONS COMING UP", "heading": f"{r['name']}: {r['label']}, {what} {when.strftime('%d %b')}",
-                    "points": [r["title"]] + ([r["detail"]] if r.get("detail") else []) + [f"Source: {r['source']}"], "tags": tags(symbol_tag(r["symbol"]), word_tag(r["label"]), "#ExDate"), "symbol": r["symbol"]})
+                    "points": [r["title"]] + ([r["detail"]] if r.get("detail") else []) + [f"Source: {r['source']}"], "tags": tags(symbol_tag(r["symbol"]), word_tag(r["label"]), "#ExDate"), "symbol": r["symbol"],
+                    "stats": {"label": r["label"], "ex": r.get("ex_date"), "record": r.get("record_date")}})
     return out
 
 

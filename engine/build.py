@@ -120,12 +120,6 @@ def apply_news_context(record, sector_moves):
     intel["validation"] = news_intel.validate(intel, reading_side(((record.get("short") or {}).get("label"))))
 
 
-def top_story(record):
-    """The most important story behind a stock's news reading (highest impact), or None."""
-    stories = (record.get("news_intel") or {}).get("stories") or []
-    return max(stories, key=lambda x: x.get("impact") or 0) if stories else None
-
-
 def ai_summary(stories, ai_scores, ai_meta):
     """What the optional model job has done and how its scores compare with the rule-based ones (agreement is not accuracy: there is no labelled truth yet)."""
     both = [s for s in stories if s.get("ai_sentiment") is not None and s.get("rule_sentiment") is not None]
@@ -171,8 +165,7 @@ def news_dashboard(records, pool, market_items, names, sector_moves, provider_st
                          key=lambda r: -r["news_intel"]["impact"])[:10]
     brief = lambda r: {"symbol": r["symbol"], "name": r["name"], "sector": r["sector"], "sentiment": r["news_intel"]["sentiment"], "impact": r["news_intel"]["impact"],
                        "interpretation": r["news_intel"]["interpretation"], "change_pct": r.get("change_pct"), "reaction": (r["news_intel"].get("reaction") or {}).get("text"),
-                       "validation": (r["news_intel"].get("validation") or {}).get("state"), "headline": (top_story(r) or {}).get("title"), "headline_source": (top_story(r) or {}).get("source"),
-                       "reading": alerts.label_text(r["short"]["label"]) if (r.get("short") or {}).get("label") not in (None, "N/A") else None}
+                       "validation": (r["news_intel"].get("validation") or {}).get("state")}
     ranked = sorted(with_intel, key=lambda r: r["news_intel"]["sentiment"] * r["news_intel"]["impact"])
     events = {}
     for s in stories:
@@ -259,7 +252,7 @@ def analyse(entry, ctx):
     raw_news += list((ctx.get("news_pool") or {}).get(symbol, []))
     raw_news = [{**row, "ai": ai_map.get(ai_sentiment.key(row.get("text") if row["kind"] == "nse" else row["title"]))} for row in raw_news]       # (a loop variable named r would hide the rounding helper r)
     intel = news_intel.analyse_stock(news_intel.dedupe([news_intel.make_story(row, ctx["now"], entry["name"]) for row in raw_news]), ctx["now"])
-    short_detail, long_detail = signals.short_detail(ind, i, news=news_intel.tone_component(intel)), signals.long_detail(ind, i)
+    short_detail, long_detail = signals.short_detail(ind, i), signals.long_detail(ind, i)
     pressure = signals.buy_sell_pressure(ind, i)
     live = None
     if provisional:
@@ -267,7 +260,7 @@ def analyse(entry, ctx):
         partial["v"][-1] = None            # the day's volume is incomplete, so volume rules must not use it
         live_ind = signals.build_indicators(partial)
         live_i = len(partial["c"]) - 1
-        live = {"short": signal_block(signals.short_detail(live_ind, live_i, news=news_intel.tone_component(intel)), live_ind, live_i, "short"),
+        live = {"short": signal_block(signals.short_detail(live_ind, live_i), live_ind, live_i, "short"),
                 "long": signal_block(signals.long_detail(live_ind, live_i), live_ind, live_i, "long")}
     dividend = dividends.dividend_profile(chart["dividends"], price, ctx["now_ts"])
     recent_splits = [{"date": datetime.fromtimestamp(ts, timezone.utc).strftime("%Y-%m-%d"), "ratio": f"{num:g}:{den:g}"}

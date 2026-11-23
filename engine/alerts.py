@@ -454,6 +454,13 @@ def send_telegram(token, chat_id, text):
     return post_telegram(token, chat_id, text)[0]
 
 
+def outcome_table(price, exit_price, move, days):
+    """The numbers of a target or stop reply as a small aligned table."""
+    cells = [["Alerted", "Now", "Move", "Days"], [f"{price:,.2f}", f"{exit_price:,.2f}", f"{move:+.1f}%", str(days)]]
+    widths = [max(len(row[c]) for row in cells) for c in range(4)]
+    return chr(10).join("  ".join(value.rjust(widths[c]) for c, value in enumerate(row)) for row in cells)
+
+
 def format_outcome(call, outcome, link=None, markup=False):
     """The reply sent when a reading's price reaches its reference level or its volatility risk level.
 
@@ -468,10 +475,11 @@ def format_outcome(call, outcome, link=None, markup=False):
     days = outcome["days_held"]
     esc = html.escape if markup else str
     head = f"{'✅ Reference level reached' if hit_target else '⚠️ Volatility risk level reached'}: {esc(name)} ({esc(call['symbol'])})"
+    table = outcome_table(price, exit_price, move, days)
     lines = [f"<b>{head}</b>" if markup else head,
-             f"• {HORIZON_TEXT[call['horizon']]} · {side_word.capitalize()} reading · alerted at {esc(money_text(price, currency))}",
-             f"• Price {verb} to {esc(money_text(exit_price, currency))} ({move:+.1f}%) on {esc(outcome['resolved_date'])}, "
-             f"{days} trading day{'s' if days != 1 else ''} after the alert"]
+             f"• {HORIZON_TEXT[call['horizon']]} · {side_word.capitalize()} reading",
+             f"<pre>{html.escape(table)}</pre>" if markup else table,
+             f"Price {verb} on {esc(outcome['resolved_date'])}, {days} trading day{'s' if days != 1 else ''} after the alert. Prices in {'rupees' if currency == 'INR' else currency or 'the stock currency'}"]
     if link:
         lines.append("• " + (anchor(link, "Open analysis") if markup else f"Open analysis: {link}"))
     lines.append("ℹ️ " + esc(ADVISORY))

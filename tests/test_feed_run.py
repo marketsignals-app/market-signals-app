@@ -16,7 +16,7 @@ def signal(symbol="AXISBANK.NS", side="buy", horizon="short", label="Buy"):
 
 
 def mover(symbol="DOLATALGO.NS"):
-    return {"kind": "mover", "symbol": symbol, "name": symbol.split(".")[0], "tags": ["+8.4%"], "price": 69.41, "currency": "INR", "small": False}
+    return {"kind": "mover", "symbol": symbol, "name": symbol.split(".")[0], "tags": ["+8.4%"], "price": 69.41, "currency": "INR", "small": False, "move": 8.4}
 
 
 class FakeTelegram:
@@ -53,24 +53,31 @@ class RenderTests(unittest.TestCase):
     def render(self, items, label="Feed", tags=("#Feed",)):
         return digest_feeds.render_feed(items, [None] * len(items), TS, label, tags)
 
-    def test_a_reading_is_a_numbered_heading_with_indented_sub_points_and_hashtags(self):
+    def test_readings_are_a_table_with_their_numbers_and_the_stock_hashtags(self):
         text = self.render([signal()])[0][0]
-        self.assertIn("1. ", text)
-        self.assertIn(digest_feeds.NBSP * 3 + "•", text)
+        self.assertIn("<pre>", text)
+        self.assertRegex(text, r"Stock\s+Score\s+Price\s+Ref\s+Risk")
+        self.assertRegex(text, r"AXISBANK\s+\+60\s+100\.00")
         self.assertRegex(text, r"#AXISBANK #Bullish #WeeksView")
+        self.assertIn("Ref = nearest reference level", text)
         self.assertIn("SEBI-registered", text)
 
-    def test_movers_are_one_line_each_without_blank_lines_between(self):
+    def test_movers_are_rows_of_one_table_with_move_and_price_columns(self):
         text = self.render([mover("A.NS"), mover("B.NS")])[0][0]
-        lines = [line for line in text.split("\n") if re.match(r"\d\. ", line)]
-        self.assertEqual(len(lines), 2)
-        self.assertTrue(all("#Mover" in line for line in lines))
-        self.assertIn(lines[0] + "\n" + lines[1], text)
+        self.assertEqual(text.count("<pre>"), 1)
+        table = text[text.index("<pre>"):text.index("</pre>")]
+        self.assertRegex(table, r"Stock\s+Move\s+Price\s+Note")
+        self.assertRegex(table, r"A\s+\+8\.4%\s+69\.41")
+        self.assertRegex(table, r"B\s+\+8\.4%\s+69\.41")
+        self.assertIn("#A #Mover", text)
 
-    def test_numbering_restarts_in_each_section(self):
-        ipo = {**mover("MEESHO.NS"), "kind": "ipo"}
-        text = self.render([mover("A.NS"), mover("B.NS"), ipo])[0][0]
-        self.assertEqual(re.findall(r"^(\d)\. ", text, flags=re.M), ["1", "2", "1"])
+    def test_each_section_is_its_own_table_and_falling_movers_are_apart_from_rising(self):
+        ipo = {**mover("MEESHO.NS"), "kind": "ipo", "tags": ["IPO breakout: above listing-day high 258.00"], "move": 0.4}
+        down = {**mover("C.NS"), "move": -9.0, "tags": ["-9.0%"]}
+        text = self.render([mover("A.NS"), down, ipo])[0][0]
+        self.assertEqual(text.count("<pre>"), 3)
+        self.assertLess(text.index("RISING"), text.index("FALLING"))
+        self.assertIn("258.00", text)
 
     def test_a_table_is_monospace_with_its_source_and_hashtags(self):
         table = fi.indexes_table({"NIFTY 50": {"last": 25653.35, "pct": -0.57}, "INDIA VIX": {"last": 17.48, "pct": 0.94}}, NOW)
@@ -85,20 +92,24 @@ class RenderTests(unittest.TestCase):
         self.assertNotIn("<script>", text)
         self.assertIn("&lt;script&gt;", text)
 
-    def test_every_message_stays_under_telegram_s_limit_and_counts_what_it_left_out(self):
+    def test_every_message_stays_under_telegram_s_limit_and_a_long_table_has_a_capped_hashtag_line(self):
         many = [mover(f"S{i}.NS") for i in range(400)]
         messages = digest_feeds.render_feed(many, None, TS, "Movers", ["#Movers"])
         self.assertLessEqual(len(messages), 3)
         self.assertTrue(all(alerts.visible_length(m[0]) <= alerts.TELEGRAM_MAX_CHARS for m in messages))
-        self.assertIn("more", messages[-1][0])
+        self.assertTrue(all(m[0].count("#S") <= digest_feeds.MAX_TABLE_TAGS for m in messages))
+        huge = [{**mover(f"S{i}.NS"), "tags": ["+8.0%", "volume 12.0x average", "at 52-week high"]} for i in range(900)]
+        messages = digest_feeds.render_feed(huge, None, TS, "Movers", ["#Movers"], max_messages=2)
+        self.assertIn("more", messages[-1][0], "what does not fit is counted, not silently dropped")
 
-    def test_bulk_deals_show_the_client_as_published(self):
+    def test_bulk_deals_show_the_client_as_published_in_a_table(self):
         rows = fi.bulk_deal_items({"BULK_DEALS_DATA": [{"date": "23-Nov-2026", "symbol": "ABC", "buySell": "BUY", "qty": "520000", "watp": "120.5", "clientName": "XYZ FUND"},
                                                        {"date": "22-Nov-2026", "symbol": "OLD", "buySell": "BUY", "qty": "1", "watp": "1"},
                                                        {"date": "23-Nov-2026", "symbol": "BAD", "buySell": "SELL", "qty": "x", "watp": "1"}]}, "23-Nov-2026")
         self.assertEqual([r["symbol"] for r in rows], ["ABC.NS"], "only today's valid deals")
         text = self.render(rows)[0][0]
-        self.assertIn("BUY 520,000 shares", text)
+        self.assertRegex(text, r"ABC\s+BUY\s+5\.2L\s+120\.50\s+6\.3cr")
+        self.assertIn("ABC: Xyz Fund", text)
         self.assertIn("#BulkDeal", text)
 
 
@@ -198,7 +209,8 @@ class VolatilityBreachTests(unittest.TestCase):
         self.assertEqual(feeds.settings()["volatility"]["every"], 15)
         items, _ = fi.volatility_breach_items([self.record()], {"A.NS": self.quote(1025.0, 2.5)}, True, {}, TS, "2026-11-23")
         text = digest_feeds.render_feed(items, [None], TS, "Volatility breaches", ["#VolatilityBreaches"])[0][0]
-        self.assertIn("1. ", text)
+        self.assertRegex(text, r"Stock\s+Move\s+x Range\s+Price\s+Prev")
+        self.assertRegex(text, r"A\s+\+2\.5%\s+2\.5x\s+1,025\.0\s+1,000\.0")
         self.assertIn("#VolatilityBreach", text)
         self.assertEqual(feeds.feed_for(items[0]), "volatility")
 
@@ -272,42 +284,54 @@ class BreachMessageTests(unittest.TestCase):
 
 
 class NewsDigestTests(unittest.TestCase):
-    ROW = {"symbol": "TATACONSUM.NS", "name": "Tata Consumer Products", "sentiment": 64, "impact": 39, "change_pct": -1.1, "validation": "confirms", "reading": "Aligned bullish",
-           "headline": "Tata Consumer Q2 profit jumps 20%, beats estimates", "headline_source": "Mint"}
+    def story(self, **over):
+        return {"symbol": "TATACONSUM.NS", "name": "Tata Consumer Products", "kind": "media", "title": "Tata Consumer announces new plant in Gujarat", "source": "Mint", "link": "https://example.com/a",
+                "event_label": "Expansion", "impact": 60, "age_hours": 2.0, "sentiment": 64, "tone": "Positive", **over}
 
-    def test_each_line_names_the_headline_and_says_in_words_what_the_news_agrees_with(self):
-        items = fi.news_digest_lines({"top_positive": [self.ROW], "top_negative": []}, {}, TS)
-        text = items[0]["text"]
-        self.assertIn("Tata Consumer Q2 profit jumps 20%, beats estimates (Mint)", text)
-        self.assertIn("agrees with our reading (Aligned bullish)", text)
-        self.assertNotIn("confirms the reading", text)
-        conflict = fi.news_digest_lines({"top_positive": [], "top_negative": [{**self.ROW, "validation": "conflicts"}]}, {}, TS)[0]["text"]
-        self.assertIn("runs against our reading (Aligned bullish)", conflict)
+    def test_the_digest_is_headlines_ranked_by_importance_and_carries_no_tone_or_score(self):
+        weak = self.story(symbol="B.NS", name="Beta", title="Beta news", impact=45, age_hours=0.2)
+        strong = self.story(symbol="A.NS", name="Alpha", title="Alpha wins big order", impact=80, age_hours=5.0)
+        items = fi.news_digest_lines({"stories": [weak, strong]}, {}, TS)
+        self.assertEqual([i["text"].split(" · ")[0] for i in items], ["Alpha", "Beta"])
+        text = " ".join(i["text"] for i in items)
+        for word in ("sentiment", "positive", "negative", "agrees", "reading"):
+            self.assertNotIn(word, text.lower())
+        self.assertIn("(Mint, 5 h ago)", items[0]["text"])
+        self.assertIn("#News", items[0]["tags"])
+        self.assertEqual(items[0]["link"], "https://example.com/a")
 
-    def test_a_stock_listed_in_the_last_day_with_the_same_headline_is_left_out(self):
-        first = fi.news_digest_lines({"top_positive": [self.ROW], "top_negative": []}, {}, TS)
+    def test_official_filings_other_outlets_only_and_weak_or_stockless_stories_are_left_out(self):
+        stories = [self.story(kind="nse"), self.story(symbol=None), self.story(impact=20), self.story(title="")]
+        self.assertEqual(fi.news_digest_lines({"stories": stories}, {}, TS), [])
+
+    def test_a_headline_listed_in_the_last_day_is_left_out_then_can_return(self):
+        first = fi.news_digest_lines({"stories": [self.story()]}, {}, TS)
         seen = {first[0]["digest_key"]: TS}
-        self.assertEqual(fi.news_digest_lines({"top_positive": [self.ROW], "top_negative": []}, seen, TS + 3600), [])
-        newer = {**self.ROW, "headline": "Tata Consumer announces new plant"}
-        self.assertEqual(len(fi.news_digest_lines({"top_positive": [newer], "top_negative": []}, seen, TS + 3600)), 1, "a new headline is listed again")
-        self.assertEqual(len(fi.news_digest_lines({"top_positive": [self.ROW], "top_negative": []}, seen, TS + 90000)), 1, "after a day it can return")
+        self.assertEqual(fi.news_digest_lines({"stories": [self.story()]}, seen, TS + 3600), [])
+        self.assertEqual(len(fi.news_digest_lines({"stories": [self.story(title="A different headline")]}, seen, TS + 3600)), 1)
+        self.assertEqual(len(fi.news_digest_lines({"stories": [self.story()]}, seen, TS + 90000)), 1)
 
-    def test_a_long_headline_is_cut_and_a_missing_one_falls_back_to_the_score(self):
-        long = {**self.ROW, "headline": "x" * 200}
-        self.assertIn("…", fi.news_digest_lines({"top_positive": [long], "top_negative": []}, {}, TS)[0]["text"])
-        none = fi.news_digest_lines({"top_positive": [{**self.ROW, "headline": None, "reading": None}], "top_negative": []}, {}, TS)[0]["text"]
-        self.assertIn("sentiment +64", none)
-        self.assertIn("agrees with our reading", none)
+    def test_a_long_headline_is_cut_and_the_list_is_capped(self):
+        long = fi.news_digest_lines({"stories": [self.story(title="x" * 200)]}, {}, TS)[0]["text"]
+        self.assertIn("…", long)
+        many = [self.story(symbol=f"S{i}.NS", title=f"Story {i}") for i in range(20)]
+        self.assertEqual(len(fi.news_digest_lines({"stories": many}, {}, TS)), 8)
 
     def test_delivery_records_what_was_listed_and_a_failed_send_records_nothing(self):
-        dash = {"top_positive": [self.ROW], "top_negative": []}
+        when = datetime(2026, 11, 23, 10, 50, tzinfo=IST)
         for fail, expected in ((False, 1), (True, 0)):
             send = FakeTelegram(fail_after=0 if fail else None)
-            src = {"news_dashboard": dash, "digest_seen": {}}
-            slot = feeds.slot_of(TABLE["news_digest"], datetime(2026, 11, 23, 10, 50, tzinfo=IST))
-            feed_run.dispatch([], {"feeds_sent": {"news_digest": "x"}, "feed_queue": []}, datetime(2026, 11, 23, 10, 50, tzinfo=IST), int(datetime(2026, 11, 23, 10, 50, tzinfo=IST).timestamp()),
-                              TABLE, src, {}, send, lambda i: None, "2026-11-23")
+            src = {"news_dashboard": {"stories": [self.story()]}, "digest_seen": {}}
+            feed_run.dispatch([], {"feeds_sent": {"news_digest": "x"}, "feed_queue": []}, when, int(when.timestamp()), TABLE, src, {}, send, lambda i: None, "2026-11-23")
             self.assertEqual(len(src["digest_seen"]), expected)
+
+    def test_a_filing_message_shows_importance_not_a_tone(self):
+        story = {"kind": "nse", "symbol": "ABC.NS", "name": "Abc", "title": "Outcome of Board Meeting", "event": "results", "event_label": "Financial results", "impact": 85, "sentiment": -40, "source": "NSE", "ts": TS,
+                 "link": "https://x.com/a.pdf"}
+        items, _ = fi.filing_entries([story], {}, TS)
+        text = digest_feeds.render_feed(items, [None], TS, "Important filings", ["#Filings"])[0][0].lower()
+        self.assertIn("importance: 85 of 100", text)
+        self.assertNotIn("sentiment", text)
 
 
 class DispatchTests(unittest.TestCase):
@@ -397,3 +421,33 @@ class DispatchTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TableAndLinkTests(unittest.TestCase):
+    def test_a_target_reply_carries_its_numbers_in_a_table(self):
+        call = {"symbol": "AXISBANK.NS", "name": "Axis Bank", "horizon": "short", "side": "buy", "price": 1446.0, "currency": "INR"}
+        outcome = {"outcome": "target", "exit_price": 1512.0, "resolved_date": "2026-11-27", "days_held": 3}
+        html_reply = alerts.format_outcome(call, outcome, "https://x/#stock=A", markup=True)
+        self.assertRegex(html_reply, r"<pre>\s*Alerted\s+Now\s+Move\s+Days\n\s*1,446\.00\s+1,512\.00\s+\+4\.6%\s+3</pre>")
+        self.assertIn("Open analysis", html_reply)
+        plain = alerts.format_outcome(call, outcome)
+        self.assertNotIn("<pre>", plain)
+        self.assertIn("1,512.00", plain)
+        self.assertTrue(plain.endswith(alerts.ADVISORY))
+
+    def test_news_links_use_the_short_label_read_article(self):
+        news = {"kind": "news", "symbol": "A.NS", "name": "A", "title": "Headline", "source": "Mint", "link": "https://example.com/very/long/path/to/an/article?id=12345678901234567890", "age_min": 5}
+        text = digest_feeds.render_feed([news], [None], TS, "Company headlines", ["#News"])[0][0]
+        self.assertIn(">Read article</a>", text)
+        digest_line = fi.news_digest_lines({"stories": [{"symbol": "A.NS", "name": "A", "kind": "media", "title": "Headline", "source": "Mint", "link": "https://example.com/x", "impact": 60, "age_hours": 1.0}]}, {}, TS)
+        text = digest_feeds.render_feed(digest_line, [None], TS, "Latest important news", ["#NewsDigest"])[0][0]
+        self.assertIn(">Read article</a>", text)
+        self.assertNotIn("example.com/x<", text, "the address is not shown, only the label")
+
+    def test_every_numeric_alert_kind_is_a_table_row(self):
+        samples = [mover(), {**mover(), "kind": "low52", "tags": ["at 52-week low"]}, {**mover(), "kind": "ipo", "tags": ["IPO breakout: above listing-day high 258.00"]}, signal(),
+                   {"kind": "deal", "symbol": "A.NS", "name": "A", "qty": 1000, "price": 5.0, "value": 5000.0, "pchange": 1.0},
+                   {"kind": "bulk", "symbol": "A.NS", "name": "A", "side": "BUY", "qty": 1000.0, "price": 5.0, "value": 5000.0, "client": "X"}]
+        for item in samples:
+            self.assertIsNotNone(digest_feeds.to_row(item), item["kind"])
+        self.assertIsNone(digest_feeds.to_row({"kind": "news", "symbol": "A.NS"}), "a headline has no numbers to tabulate")

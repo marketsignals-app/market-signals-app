@@ -1,25 +1,18 @@
-"""News tone: a small, additional parameter in a short-term reading. It is never the source of truth.
+"""A rough tone for a headline, from a word list. Experimental: it is shown on the website and is not used in any reading or alert.
 
-A plain word list for financial headlines (no outside service, nothing is sent anywhere) scores each headline from -1 to +1, with negation handled
-("denies fraud" is not negative), a phrase list ahead of the single words ("record profit" before "profit"), and an intensity word ("sharply",
-"slumps"). A stock's tone is the recency-weighted average over its recent headlines that are clearly about the company (half-life 24 hours,
-nothing older than 72), duplicates counted once, then pulled toward zero when there are few headlines: a single headline cannot move the tone far.
+A plain word list for financial headlines (no outside service, nothing is sent anywhere) scores a headline from -1 to +1, with negation handled
+("denies fraud" is not negative), a phrase list ahead of the single words ("record profit" before "profit", and the longest phrase wins), and an intensity word
+("sharply", "slumps").
 
 What this is and is not:
   * A word list reads words, not meaning. Sarcasm, context and headlines that report a fall as bad news for someone else are misread. Accuracy was not
-    measured against labelled data, which does not exist for this feed; treat the tone as a rough signal.
-  * It carries a small weight in the short-term score (signals.NEWS_WEIGHT, 5 of 105) and none in the long-term score. Backtests cannot include it (there
-    is no historical news), so they use the price and volume rule alone.
-  * Every reading's news part is recorded with each tracked call, so the Track record tab can show, once there are enough settled calls, whether
-    readings the news supported did better than readings it opposed.
+    measured against labelled data, which does not exist for this feed; treat the tone as rough.
+  * It is not part of any Buy or Sell reading, any Telegram alert or any backtest (it was part of the short-term reading until 23 Nov 2026 and was removed because it
+    had not been validated). The website shows it, labelled experimental.
 """
 import math
 import re
 
-HALF_LIFE_HOURS = 24.0
-MAX_AGE_HOURS = 72
-SHRINK = 2.0              # tone is multiplied by n / (n + SHRINK)
-MIN_ITEMS = 1
 
 # Phrases first (matched as whole text), then words. Values are -2..+2; two means a strong word.
 PHRASES = {
@@ -85,46 +78,3 @@ def score_title(title):
     if QUESTION.search(text):                                   # a question reports nothing
         total *= 0.3
     return round(math.tanh(total / 2.0), 3), hits[:4]
-
-
-def _key(title):
-    return " ".join(_TOKEN.findall((title or "").lower())[:8])
-
-
-def tone(items, max_age_hours=MAX_AGE_HOURS):
-    """The tone of a stock's recent headlines: {"score" -1..1, "n", "positive", "negative", "label", "confidence", "items": [...]} or None when there is nothing to read.
-
-    items: headline dicts from engine/news.py with "title", "age_min" and "relevant". Only relevant headlines under max_age_hours count."""
-    seen, rows = set(), []
-    for item in items or []:
-        age = item.get("age_min")
-        if not item.get("relevant", True) or age is None or age > max_age_hours * 60:
-            continue
-        key = _key(item.get("title"))
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        value, hits = score_title(item.get("title"))
-        weight = 0.5 ** (age / 60.0 / HALF_LIFE_HOURS)
-        rows.append({"title": item.get("title"), "source": item.get("source"), "score": value, "weight": weight, "age_min": age, "words": hits})
-    if len(rows) < MIN_ITEMS:
-        return None
-    scored = [r for r in rows if r["score"] != 0.0]
-    weights = sum(r["weight"] for r in rows)
-    raw = sum(r["weight"] * r["score"] for r in rows) / weights if weights else 0.0
-    n = len(rows)
-    score = raw * n / (n + SHRINK)
-    label = "positive" if score >= 0.15 else "negative" if score <= -0.15 else "neutral"
-    top = sorted(rows, key=lambda r: -abs(r["score"] * r["weight"]))[:3]
-    return {"score": round(score, 3), "n": n, "read": len(scored), "positive": sum(1 for r in rows if r["score"] > 0.15), "negative": sum(1 for r in rows if r["score"] < -0.15),
-            "label": label, "confidence": "low" if n < 3 else "medium" if n < 6 else "higher",
-            "items": [{"title": r["title"], "source": r["source"], "score": r["score"], "age_min": r["age_min"], "words": r["words"]} for r in top]}
-
-
-def component(summary):
-    """(value, text) for the short-term score, or None when there is nothing to read or nothing in the words."""
-    if not summary or summary["read"] == 0:
-        return None
-    word = {"positive": "leaning positive", "negative": "leaning negative", "neutral": "neutral"}[summary["label"]]
-    return summary["score"], (f"News tone: {word} ({summary['positive']} positive, {summary['negative']} negative of {summary['n']} recent headline"
-                              f"{'' if summary['n'] == 1 else 's'}, word-based, low weight)")

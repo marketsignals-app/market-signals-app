@@ -120,12 +120,6 @@ class ReactionAndValidationTests(unittest.TestCase):
         self.assertEqual(ni.validate(good, None)["state"], "neutral")
         self.assertEqual(ni.validate(None, "buy")["state"], "neutral")
 
-    def test_the_score_component_is_small_signed_and_absent_without_news(self):
-        self.assertIsNone(ni.tone_component(None))
-        value, text = ni.tone_component(self.intel("Acme Q2 profit jumps, beats estimates"))
-        self.assertTrue(0 < value <= 1)
-        self.assertIn("rule-based", text)
-
 
 class SectorTests(unittest.TestCase):
     def test_sector_rows(self):

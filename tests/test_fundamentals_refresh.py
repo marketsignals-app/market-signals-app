@@ -93,7 +93,7 @@ class ScoresDoNotUseFundamentalsTests(unittest.TestCase):
     def test_the_scoring_code_never_reads_fundamentals(self):
         for fn in (signals.short_detail, signals.long_detail, signals.build_indicators, signals.invalidation):
             self.assertNotIn("fundamental", inspect.getsource(fn).lower(), fn.__name__)
-        self.assertEqual(list(inspect.signature(signals.short_detail).parameters), ["ind", "i", "news"])      # news tone, never fundamentals
+        self.assertEqual(list(inspect.signature(signals.short_detail).parameters), ["ind", "i"])      # price and volume only: no fundamentals, no news
         self.assertEqual(list(inspect.signature(signals.long_detail).parameters), ["ind", "i"])
 
 
