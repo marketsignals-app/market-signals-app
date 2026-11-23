@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from . import digest, event_news, events, market as market_view, verify
-from . import manifest, ai_sentiment, catalog, data_learning, evidence, learning, news_ai, news_intel, news_sources, nse_live, sentiment, provenance, statements, universe_sync, alerts, backtest, costs, deals_live, sessions, wide, discover, membership as index_membership, official, dividends, exchange, fetch, fundamentals, ipo_gmp, ledger, news, patterns, risk, signals, tracking
+from . import alert_memory, ledger_git, manifest, ai_sentiment, catalog, data_learning, evidence, learning, news_ai, news_intel, news_sources, nse_live, sentiment, provenance, statements, universe_sync, alerts, backtest, costs, deals_live, sessions, wide, discover, membership as index_membership, official, dividends, exchange, fetch, fundamentals, ipo_gmp, ledger, news, patterns, risk, signals, tracking
 
 ROOT = Path(__file__).resolve().parent.parent
 WORKERS = 6
@@ -553,6 +553,39 @@ def carry_forward(errors, previous, today):
     return carried, failed
 
 
+def data_remote(args):
+    """The git remote holding the data branch, or "" when this run keeps nothing there (local runs and tests)."""
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    return args.ledger_remote or (f"https://github.com/{repo}.git" if repo and not args.ledger_dir else "")
+
+
+def open_alert_memory(args):
+    """(working copy folder, remote) of the data branch for the sent-alert memory, or (None, "") if it cannot be reached. Never raises."""
+    remote = data_remote(args)
+    if not remote:
+        return None, ""
+    directory = Path(tempfile.mkdtemp()) / "alert-memory"
+    try:
+        ledger_git.prepare(directory, remote, token=os.environ.get("GITHUB_TOKEN") or None)
+        return directory, remote
+    except (ledger_git.GitError, OSError) as err:
+        print("Sent-alert memory unavailable, using the published state:", err)
+        return None, ""
+
+
+def save_alert_memory(directory, remote, new_state, now):
+    """Store what has been sent on the data branch. A failure is reported and the run carries on (the published state is the fallback)."""
+    if not directory:
+        return False
+    try:
+        alert_memory.write(directory, new_state, now.isoformat())
+        ledger_git.publish(directory, f"Sent alerts {now:%Y-%m-%d %H:%M}", token=os.environ.get("GITHUB_TOKEN") or None)
+        return True
+    except (ledger_git.GitError, OSError) as err:
+        print("Sent-alert memory not saved:", err)
+        return False
+
+
 def track(args, state, prev_data, calls, ctx, now_ts, token, chat, link_for_symbol):
     """Record new calls, check open ones against fresh prices and reply to those that hit target or stop.
 
@@ -567,7 +600,7 @@ def track(args, state, prev_data, calls, ctx, now_ts, token, chat, link_for_symb
     notified = [i for i in state.get("notified_outcomes", []) if isinstance(i, str)]
 
     repo = os.environ.get("GITHUB_REPOSITORY", "")
-    remote = args.ledger_remote or (f"https://github.com/{repo}.git" if repo and not args.ledger_dir else "")
+    remote = data_remote(args)
     if not (args.ledger_dir or remote):
         return previous_record, pending, queue, notified, []
     directory = args.ledger_dir or str(Path(tempfile.mkdtemp()) / "ledger")
@@ -620,6 +653,11 @@ def run(args):
     alert_cfg = json.loads(alert_path.read_text(encoding="utf-8")) if alert_path.exists() else {}
     prev_data = load_previous(args.prev, "data.json")
     state = load_previous(args.prev, "state.json")
+    memory_dir, memory_remote = open_alert_memory(args)
+    stored_memory = alert_memory.read(memory_dir) if memory_dir else None
+    state, from_memory = alert_memory.restore(state, stored_memory)
+    if memory_dir:
+        print("Sent-alert memory: " + ("restored from the data branch" if from_memory else "none stored yet" if not stored_memory else "older than the published state, using the published state"))
 
     config["stocks"], sync_state, synced = universe_sync.sync(now, state.get("universe_sync"), config["stocks"])
     registry = discover.discover(state, today)
@@ -869,6 +907,7 @@ def run(args):
                  "briefs_sent": {k: v for k, v in briefs_sent.items() if v == today_ist}, "nse_sources": nse, "news_alert_history": {s: v for s, v in news_history.items() if v}, "deal_seen": deal_seen,
                  "live_deals": {k: v for k, v in live_deals.items() if k != "deals"}, "eod_close": closes, "nse_live": {k: v for k, v in live_feed.items() if k != "prices"}, "statements": statements_cache, "news_providers": provider_status, "news_archive": news_archive, "data_health": health, "event_news": event_cache, "official": official_events, "ledger_pending": pending, "reply_queue": queue, "notified_outcomes": notified}
 
+    save_alert_memory(memory_dir, memory_remote, new_state, now)      # before the checks and the deploy: a failed publish must not make the next run send these again
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     build_id = manifest.new_build_id(time.time())
