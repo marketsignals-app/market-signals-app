@@ -53,39 +53,39 @@ class RenderTests(unittest.TestCase):
     def render(self, items, label="Feed", tags=("#Feed",)):
         return digest_feeds.render_feed(items, [None] * len(items), TS, label, tags)
 
-    def test_readings_are_two_narrow_tables_with_their_numbers_and_the_stock_hashtags(self):
+    def test_readings_are_a_numbered_entry_with_bullets_and_the_stock_hashtags(self):
         text = self.render([signal()])[0][0]
-        self.assertEqual(text.count("<pre>"), 2)
-        self.assertRegex(text, r"Stock\s+Score\s+Price")
-        self.assertRegex(text, r"AXISBANK\s+\+60\s+100\.00")
-        self.assertRegex(text, r"Stock\s+Ref\s+Risk")
+        self.assertNotIn("<pre>", text, "small phones wrap tables: alerts are lists")
+        self.assertIn("1. <b>AXISBANK</b>", text)
+        self.assertIn("Score: +60 · Price: 100.00", text)
+        self.assertRegex(text, r"Ref: .* · Risk: ")
         self.assertRegex(text, r"#AXISBANK #Bullish #WeeksView")
         self.assertIn("Ref = nearest reference level", text)
         self.assertIn("SEBI-registered", text)
 
-    def test_movers_are_rows_of_one_narrow_table_and_words_go_in_a_note(self):
+    def test_movers_are_entries_and_the_words_are_a_bullet(self):
         small = {**mover("B.NS"), "small": True, "tags": ["+8.4%", "volume 7.9x average"]}
         text = self.render([mover("A.NS"), small])[0][0]
-        self.assertEqual(text.count("<pre>"), 1)
-        table = text[text.index("<pre>"):text.index("</pre>")]
-        self.assertRegex(table, r"Stock\s+Move\s+Price\n")
-        self.assertNotIn("Note", table, "words are not a column: they wrap on a phone")
-        self.assertRegex(table, r"A\s+\+8\.4%\s+69\.41")
-        self.assertIn("B: vol 7.9x; small stock", text)
+        self.assertNotIn("<pre>", text)
+        self.assertIn("2. <b>B</b>", text)
+        self.assertIn("Move: +8.4% · Price: 69.41", text)
+        self.assertIn("vol 7.9x; small stock", text)
+        self.assertNotIn("B: vol", text, "the stock is the heading, so the bullet does not repeat it")
         self.assertIn("#A #Mover", text)
 
-    def test_each_section_is_its_own_table_and_falling_movers_are_apart_from_rising(self):
+    def test_each_section_has_its_own_numbering_and_falling_movers_are_apart_from_rising(self):
         ipo = {**mover("MEESHO.NS"), "kind": "ipo", "tags": ["IPO breakout: above listing-day high 258.00"], "move": 0.4}
         down = {**mover("C.NS"), "move": -9.0, "tags": ["-9.0%"]}
         text = self.render([mover("A.NS"), down, ipo])[0][0]
-        self.assertEqual(text.count("<pre>"), 4, "rising, falling and the IPO breakout's two tables")
         self.assertLess(text.index("RISING"), text.index("FALLING"))
-        self.assertIn("258.00", text)
+        self.assertEqual(text.count("1. <b>"), 3, "numbering restarts in each section")
+        self.assertIn("Level: 258.00", text)
 
-    def test_a_table_is_monospace_with_its_source_and_hashtags(self):
+    def test_a_feed_table_is_numbered_lines_with_its_source_and_hashtags(self):
         table = fi.indexes_table({"NIFTY 50": {"last": 25653.35, "pct": -0.57}, "INDIA VIX": {"last": 17.48, "pct": 0.94}}, NOW)
         text = self.render([table], "Indexes", table["tags"][:1])[0][0]
-        self.assertIn("<pre>", text)
+        self.assertNotIn("<pre>", text)
+        self.assertIn("1. <b>Nifty 50</b> · 25,653.35 · -0.57%", text)
         self.assertIn("Source: NSE all-indices feed", text)
         self.assertIn("#Nifty50", text)
 
@@ -95,25 +95,24 @@ class RenderTests(unittest.TestCase):
         self.assertNotIn("<script>", text)
         self.assertIn("&lt;script&gt;", text)
 
-    def test_every_message_stays_under_telegram_s_limit_and_a_long_table_has_a_capped_hashtag_line(self):
+    def test_every_message_stays_under_telegram_s_limit(self):
         many = [mover(f"S{i}.NS") for i in range(400)]
         messages = digest_feeds.render_feed(many, None, TS, "Movers", ["#Movers"])
         self.assertLessEqual(len(messages), 3)
         self.assertTrue(all(alerts.visible_length(m[0]) <= alerts.TELEGRAM_MAX_CHARS for m in messages))
-        self.assertTrue(all(m[0].count("#S") <= digest_feeds.MAX_TABLE_TAGS for m in messages))
         huge = [{**mover(f"S{i}.NS"), "tags": ["+8.0%", "volume 12.0x average", "at 52-week high"]} for i in range(900)]
         messages = digest_feeds.render_feed(huge, None, TS, "Movers", ["#Movers"], max_messages=2)
         self.assertIn("more", messages[-1][0], "what does not fit is counted, not silently dropped")
 
-    def test_bulk_deals_show_the_client_as_published_in_a_table(self):
+    def test_bulk_deals_show_the_client_as_published(self):
         rows = fi.bulk_deal_items({"BULK_DEALS_DATA": [{"date": "23-Nov-2026", "symbol": "ABC", "buySell": "BUY", "qty": "520000", "watp": "120.5", "clientName": "XYZ FUND"},
                                                        {"date": "22-Nov-2026", "symbol": "OLD", "buySell": "BUY", "qty": "1", "watp": "1"},
                                                        {"date": "23-Nov-2026", "symbol": "BAD", "buySell": "SELL", "qty": "x", "watp": "1"}]}, "23-Nov-2026")
         self.assertEqual([r["symbol"] for r in rows], ["ABC.NS"], "only today's valid deals")
         text = self.render(rows)[0][0]
-        self.assertRegex(text, r"ABC\s+BUY\s+5\.2L\s+120\.50")
-        self.assertRegex(text, r"ABC\s+6\.3cr")
-        self.assertIn("ABC: Xyz Fund", text)
+        self.assertIn("Side: BUY · Qty: 5.2L · Price: 120.50", text)
+        self.assertIn("Value: 6.3cr", text)
+        self.assertIn("Xyz Fund", text)
         self.assertIn("#BulkDeal", text)
 
 
@@ -215,9 +214,8 @@ class VolatilityBreachTests(unittest.TestCase):
         self.assertEqual(feeds.settings()["volatility"]["every"], 15)
         items, _ = fi.volatility_breach_items([self.record()], {"A.NS": self.quote(1025.0, 2.5)}, True, {}, TS, "2026-11-23")
         text = digest_feeds.render_feed(items, [None], TS, "Volatility breaches", ["#VolatilityBreaches"])[0][0]
-        self.assertRegex(text, r"Stock\s+Move\s+x Range")
-        self.assertRegex(text, r"A\s+\+2\.5%\s+2\.5x")
-        self.assertRegex(text, r"A\s+1,025\.0\s+1,000\.0")
+        self.assertIn("Move: +2.5% · x Range: 2.5x", text)
+        self.assertIn("Price: 1,025.0 · Prev: 1,000.0", text)
         self.assertIn("#VolatilityBreach", text)
         self.assertEqual(feeds.feed_for(items[0]), "volatility")
 
@@ -431,13 +429,13 @@ if __name__ == "__main__":
 
 
 class TableAndLinkTests(unittest.TestCase):
-    def test_a_target_reply_carries_its_numbers_in_a_table(self):
+    def test_a_target_reply_carries_its_numbers_as_bullets(self):
         call = {"symbol": "AXISBANK.NS", "name": "Axis Bank", "horizon": "short", "side": "buy", "price": 1446.0, "currency": "INR"}
         outcome = {"outcome": "target", "exit_price": 1512.0, "resolved_date": "2026-11-27", "days_held": 3}
         html_reply = alerts.format_outcome(call, outcome, "https://x/#stock=A", markup=True)
-        table = html_reply[html_reply.index("<pre>"):html_reply.index("</pre>")]
-        self.assertRegex(table, r"Alerted\s+Now\s+Move\s+Days")
-        self.assertRegex(table, r"1,446\.0\s+1,512\.0\s+\+4\.6%\s+3")
+        self.assertNotIn("<pre>", html_reply)
+        self.assertIn("• Alerted at 1,446.0 · Now 1,512.0", html_reply)
+        self.assertIn("• Move +4.6% in 3 trading days", html_reply)
         self.assertIn("Open analysis", html_reply)
         plain = alerts.format_outcome(call, outcome)
         self.assertNotIn("<pre>", plain)
@@ -463,16 +461,12 @@ class TableAndLinkTests(unittest.TestCase):
 
 
 class PhoneWidthTests(unittest.TestCase):
-    """Phones wrap a monospace line wider than about 30 characters, which breaks a table. Every table must stay under 32 even with long names and big numbers."""
-    LIMIT = 32
+    """Small phones wrap a monospace table, so alerts are lists of short lines: no alert kind produces a <pre> block, and long names and big numbers are kept whole."""
 
-    def widest(self, items):
-        import re as _re
-        text = "".join(m[0] for m in digest_feeds.render_feed(items, [None] * len(items), TS, "Feed", ["#X"]))
-        lines = [l for block in _re.findall(r"<pre>(.*?)</pre>", text, flags=_re.S) for l in block.replace("&amp;", "&").splitlines()]
-        return max(len(l) for l in lines), text
+    def text_of(self, items):
+        return "".join(m[0] for m in digest_feeds.render_feed(items, [None] * len(items), TS, "Feed", ["#X"]))
 
-    def test_every_table_kind_stays_narrow(self):
+    def test_no_alert_kind_is_a_table(self):
         big = {"kind": "mover", "symbol": "SHALIMARPAINTS.NS", "name": "x", "tags": ["+19.8%", "volume 10.5x average"], "price": 12345.67, "currency": "INR", "small": True, "move": 19.8}
         cases = [[big], [{**big, "kind": "ipo", "tags": ["IPO breakout: above listing-day high 25,800.00"]}],
                  [{"kind": "deal", "symbol": "LENSKARTLIMITED.NS", "name": "x", "qty": 12697702, "price": 12345.0, "value": 9.2e9, "pchange": -12.6}],
@@ -496,12 +490,6 @@ class PhoneWidthTests(unittest.TestCase):
         sectors = [{"sector": s, "d1": d1, "d5": 1.0, "n": 8} for s, d1 in (("Metals and Mining", 12.2), ("Pharma and Health", 5.5), ("Real Estate", 1.0), ("Banks", -0.5), ("Industrials", -7.7), ("New listings", -12.1))]
         cases.append([fi.sectors_table(sectors, NOW)])
         for items in cases:
-            width, text = self.widest(items)
-            self.assertLessEqual(width, self.LIMIT, f"{items[0]['kind']}: {width} wide")
-
-    def test_the_target_reply_table_is_narrow_too(self):
-        import re as _re
-        reply = alerts.format_outcome({"symbol": "A.NS", "name": "A", "horizon": "short", "side": "buy", "price": 12345.0, "currency": "INR"},
-                                      {"outcome": "target", "exit_price": 13512.0, "resolved_date": "2026-11-27", "days_held": 3}, markup=True)
-        block = _re.search(r"<pre>(.*?)</pre>", reply, flags=_re.S).group(1)
-        self.assertLessEqual(max(len(l) for l in block.splitlines()), self.LIMIT)
+            text = self.text_of(items)
+            self.assertNotIn("<pre>", text, items[0]["kind"])
+            self.assertIn("Educational information", text)

@@ -150,6 +150,7 @@ class AlertItemTests(unittest.TestCase):
             self.assertIn(feed, feeds.settings())
         text = " ".join(digest_feeds.render_feed([i for i in items if i["feed"] == "corp_actions"], [None], TS, "Corporate actions", ["#CorporateActions"])[0][0].split())
         self.assertIn("#ABC #Demerger #CorporateAction", text)
+        self.assertIn(">Read filing</a>", digest_feeds.render_feed([i for i in items if i["feed"] == "corp_actions"], [None], TS, "Corporate actions", ["#CorporateActions"])[0][0], "an official filing says Read filing")
         line = digest_feeds.render_feed([i for i in items if i["feed"] == "circuits"], [None], TS, "Circuit hits", ["#Circuits"])[0][0]
         self.assertIn("UPPER CIRCUIT", line)
         self.assertIn("#UpperCircuit", line)

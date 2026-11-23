@@ -292,10 +292,7 @@ the run in `engine/feed_run.py`). Times are IST, weekdays. The app's own alert l
 | Today's events | daily 08:30 | | confirmed results, ex-dates and the like |
 | Weekly summary | Sunday 18:00 | | track record, learning outlook (still "no better than the base rate"), data health |
 
-Alerts that carry numbers are tables: movers, readings (score, price, reference and risk levels), block and bulk deals, circuits, gaps, IPO breakouts, volatility breaches,
-upcoming IPOs, ex-dates, index alerts, the weekly track record and the numbers of a target or stop reply. Each table is a monospace block with its source line and the hashtags (stock
-symbols, kind of alert; at most 25 per table). Phones wrap a monospace line wider than about 30 characters, so each table is at most about 28 wide: words go in a note under the table and a
-wider alert (readings, deals, circuits, gaps, breaches, IPOs) is two short tables. Text alerts (filings, corporate actions, headlines) keep a numbered heading with sub-points. News links show as "Read article".
+Alerts that carry numbers are short lists, not tables (a table wraps on a small phone): each stock is a numbered heading with a few bullets of figures (for example "Move: +2.2% · Price: 401.70"), then its own hashtags; the source and a one-line key follow each section. Indexes, commodities and sectors are one numbered line per row. Text alerts (filings, corporate actions, headlines) keep a numbered heading with sub-points. News links show as "Read article".
 
 Movers are shown in two sections, rising and falling, and tagged `#Surge` at +10% or more and `#Crash` at -10% or less.
 
@@ -314,7 +311,7 @@ about 10 to 20 minutes of its slot, not on the exact minute. Which slot was last
 a feed whose Telegram send failed keeps its items and is tried again. On the first run with this scheme nothing is sent: every feed starts with its next slot.
 
 Message styles, so a message reads quickly: **A** a numbered heading with indented sub-points (readings, filings, volatility alert, IPOs, events, weekly summary); **B** one numbered
-line per item with the figures inline (movers, IPO breakouts, deals, headlines); **C** a monospace table (indexes, commodities, sectors). Every entry carries hashtags (the stock symbol such as
+line per item with the figures inline (headlines, indexes, commodities, sectors); **C** a heading with bullets of figures (movers, circuits, deals, gaps, breaches, IPOs, target and stop replies). Every entry carries hashtags (the stock symbol such as
 `#AXISBANK` or `#M_M`, the kind of alert, the sector) for searching in Telegram. Every snapshot names its source and time.
 
 Change a cadence or window without code in `config/alerts.json`, for example `{"feeds": {"movers": {"every": 20}, "sectors": {"enabled": false}}}`. Set `"scheduled_feeds": false`

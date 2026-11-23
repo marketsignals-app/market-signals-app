@@ -124,15 +124,13 @@ def sectors_table(sectors, now, count=3):
         return None
     ordered = sorted(rated, key=lambda s: -s["d1"])
     top, bottom = ordered[:count], [s for s in ordered[::-1][:count] if s not in ordered[:count]]
-    name = lambda x: SECTOR_SHORT.get(x["sector"], x["sector"])[:12]
+    name = lambda x: SECTOR_SHORT.get(x["sector"], x["sector"])
     rows = [[name(s), _signed(s["d1"]), _signed(s.get("d5"), 1)] for s in top]
     counts = [[name(s), str(s.get("n"))] for s in top]
-    if bottom:
-        rows.append(["-", "-", "-"])
-        counts.append(["-", "-"])
-        rows += [[name(s), _signed(s["d1"]), _signed(s.get("d5"), 1)] for s in bottom]
-        counts += [[name(s), str(s.get("n"))] for s in bottom]
+    rows += [[name(s), _signed(s["d1"]), _signed(s.get("d5"), 1)] for s in bottom]
+    counts += [[name(s), str(s.get("n"))] for s in bottom]
     return {"kind": "table", "feed": "sectors", "title": "SECTOR GROWTH", "header": ["Sector", "Today", "5 days"], "rows": rows, "more": [{"header": ["Sector", "Stocks"], "rows": counts}],
+            "labelled": True, "notes": [f"The first {len(top)} are the strongest today" + (f", the last {len(bottom)} the weakest" if bottom else "")],
             "source": f"average move of the stocks of our list in each sector, {_stamp(now)}", "tags": tags("#Sectors", *[s["sector"] for s in top + bottom])}
 
 
@@ -270,19 +268,27 @@ def news_digest_lines(dashboard, seen=None, now_ts=0, limit=8, min_impact=40):
     seen = seen or {}
     rows = [s for s in (dashboard or {}).get("stories") or [] if s.get("symbol") and s.get("kind") == "media" and (s.get("impact") or 0) >= min_impact and s.get("title")]
     rows.sort(key=lambda s: (-(s.get("impact") or 0), s.get("age_hours") if isinstance(s.get("age_hours"), (int, float)) else 1e9))
-    out = []
+    out, by_event = [], {}
     for s in rows:
         key = hashlib.sha1(f"{s['symbol']}|{s['title']}".encode()).hexdigest()[:16]
         if key in seen and now_ts - seen[key] <= 86400:
+            continue
+        group = (s["symbol"], s.get("event_label") or "News")
+        if group in by_event:                                  # more stories about the same event of the same stock: one entry, counted
+            first = by_event[group]
+            first["digest_keys"].append(key)
+            first["text"] = first["base_text"] + f" · +{len(first['digest_keys']) - 1} more on this"
+            continue
+        if len(out) >= limit:                                  # the list is full: only stories of events already in it are still counted
             continue
         hours = s.get("age_hours")
         age = "time unknown" if not isinstance(hours, (int, float)) else f"{round(hours * 60)} min ago" if hours < 1.5 else f"{round(hours)} h ago"
         title = s["title"].strip()
         label = s.get("event_label") or "News"
         out.append({"kind": "line", "title": "LATEST IMPORTANT NEWS", "text": f"{s.get('name') or symbol_tag(s['symbol']).lstrip('#')} · {label} · {title[:120]}{'…' if len(title) > 120 else ''} ({s.get('source') or 'source unknown'}, {age})",
-                    "tags": tags(symbol_tag(s["symbol"]), word_tag(label), "#News"), "link": s.get("link") or "", "digest_key": key})
-        if len(out) >= limit:
-            break
+                    "tags": tags(symbol_tag(s["symbol"]), word_tag(label), "#News"), "link": s.get("link") or "", "digest_key": key, "digest_keys": [key]})
+        out[-1]["base_text"] = out[-1]["text"]
+        by_event[group] = out[-1]
     return out
 
 

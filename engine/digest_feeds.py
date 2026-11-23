@@ -1,8 +1,8 @@
 """The messages of the scheduled feeds (engine/feeds.py), in three styles. Cards that already exist in engine/digest.py are reused.
 
   A  a numbered heading with sub-points: readings, important filings, entries (volatility alert, upcoming IPOs, events, weekly summary)
-  B  one numbered line per item, figures inline: movers, IPO breakouts, block deals, headlines, news lines
-  C  a monospace table: indexes, commodities, sectors
+  B  one numbered line per item, figures inline: headlines, news lines, and the indexes, commodities and sectors lines
+  C  a numbered entry with one bullet per group of figures: movers, circuits, deals, gaps, breaches, IPOs, readings (no tables: they wrap on a small phone)
 
 Every message has a bold title with the IST time, its hashtags, sections of numbered entries (numbering restarts in each section) and the advisory footer.
 Every entry carries hashtags (the stock symbol, the kind of alert) so they can be searched in Telegram.
@@ -62,7 +62,7 @@ def entry_card(item, link):
     lines = [f"<b>{esc(digest.quiet(digest._clip(item['heading'], 160)))}</b>"] + [f"{digest.BULLET} {esc(digest.quiet(digest._clip(p, 220)))}" for p in item.get("points") or []]
     url = item.get("link") or link
     if str(url or "").startswith("https://"):
-        lines.append(f"{digest.BULLET} {alerts.anchor(url, 'Details')}")
+        lines.append(f"{digest.BULLET} {alerts.anchor(url, 'Read filing' if item.get('feed') == 'corp_actions' else 'Details')}")
     return "\n".join(lines)
 
 
@@ -101,15 +101,22 @@ def line_item(number, item):
 
 
 def table_block(item):
-    """Style C: aligned monospace tables (a first table and any extra tables under it), notes, the source and the hashtags. Each table stays about 28 characters wide."""
-    aligns = item.get("aligns") or "l" + "r" * (len(item["header"]) - 1)
-    parts = [render_table(item["header"], item["rows"], aligns)]
-    for more in item.get("more") or []:
-        parts.append(render_table(more["header"], more["rows"], more.get("aligns") or "l" + "r" * (len(more["header"]) - 1)))
+    """Style C: one numbered line per row (small phones wrap a monospace table), the figures separated by dots; a feed with `labelled` names each figure.
+    Extra columns (`more`) join the line of the same row. Then the notes, the source and the hashtags."""
+    header, extra = item["header"], item.get("more") or []
+    lines = []
+    for index, row in enumerate(item["rows"]):
+        cells = [(header[c], v) for c, v in enumerate(row) if c]
+        for more in extra:
+            if index < len(more["rows"]):
+                cells += [(more["header"][c], v) for c, v in enumerate(more["rows"][index]) if c]
+        figures = [f"{h} {v}" if item.get("labelled") and h else str(v) for h, v in cells]
+        lines.append(f"{index + 1}. <b>{esc(row[0])}</b> · " + esc(" · ".join(figures)))
+    parts = [chr(10).join(lines)]
     if item.get("notes"):
         parts.append(chr(10).join(esc(n) for n in item["notes"]))
     parts.append(esc("Source: " + item["source"]) + tag_line(item.get("tags")))
-    return chr(10).join(parts)
+    return digest.NL2.join(parts)
 
 
 # ---------- numbers go in tables: each alert that carries figures becomes a row of a monospace table ----------
@@ -167,7 +174,6 @@ def _note_of(tags):
 
 
 YAHOO = "Yahoo Finance (delayed)"
-MAX_TABLE_TAGS = 25
 
 
 def T(header, aligns, row):
@@ -179,7 +185,7 @@ def to_row(item):
     so every table is at most about 28 wide: extra columns go into a second table under the first, and words go in notes. Result:
     {"title", "tables": [{"header", "aligns" (l or r per column), "rows"}], "notes", "caption", "source", "tags"}."""
     kind, stats = item.get("kind"), item.get("stats") or {}
-    sym = short(item.get("symbol"), 9)
+    sym = short(item.get("symbol"), 24)
     if kind in ("mover", "low52"):
         move = item.get("move") if isinstance(item.get("move"), (int, float)) else 0
         title = "52-WEEK LOWS" if kind == "low52" else "RISING" if move >= 0 else "FALLING"
@@ -218,24 +224,24 @@ def to_row(item):
     if kind == "entry" and stats:
         if "ratio" in stats:
             notes = [p for p in item.get("points", []) if p.startswith("Earlier reading alert")]
-            name = sym or short(item.get("heading", "").split(":")[0], 9)
+            name = sym or short(item.get("heading", "").split(":")[0], 24)
             return {"title": "VOLATILITY BREACHES", "tables": [T(["Stock", "Move", "x Range"], "lrr", [name, pct(stats["move_pct"]), f"{stats['ratio']:.1f}x"]),
                                                               T(["Stock", "Price", "Prev"], "lrr", [name, money(stats["price"]), money(stats["previous"])])],
                     "notes": [f"{name}: {n}" for n in notes],
                     "caption": f"x Range = today's move over its 14-day average daily range (ATR {money(stats['atr'])}). Beyond 2x is unusually large. Prices in rupees", "source": YAHOO, "tags": item.get("tags")}
         if "status" in stats:
-            name = str(stats.get("name") or "")[:10]
+            name = str(stats.get("name") or "")[:32]
             return {"title": "UPCOMING IPOS", "tables": [T(["IPO", "Open-Close", "Price"], "lrr", [name, day_range(stats.get("open"), stats.get("close")), money(stats.get("price"))]),
                                                        T(["IPO", "Sub", "GMP"], "lrr", [name, f"{stats['sub']:.1f}x" if isinstance(stats.get("sub"), (int, float)) else "-",
                                                                                             pct(stats.get("gmp_pct"), 0) if stats.get("gmp_pct") is not None else "-"])],
                     "notes": [f"{name}: {stats['status']}, lists {one_day(stats.get('listing'))}"], "caption": "Sub = subscription so far. GMP = grey-market premium, unofficial. Price in rupees",
                     "source": "Investorgain and the exchanges", "tags": item.get("tags")}
         if "ex" in stats:
-            return {"title": "SHARE ACTIONS COMING UP", "tables": [T(["Stock", "Action", "Ex-date"], "llr", [sym, stats["label"][:12], (stats.get("ex") or "-")[5:]]),
+            return {"title": "SHARE ACTIONS COMING UP", "tables": [T(["Stock", "Action", "Ex-date"], "llr", [sym, stats["label"], (stats.get("ex") or "-")[5:]]),
                                                                T(["Stock", "Record"], "lr", [sym, (stats.get("record") or "-")[5:]])],
                     "caption": "Dates are month-day", "source": "NSE corporate actions (official)", "tags": item.get("tags")}
         if "last" in stats:
-            return {"title": item.get("title") or "INDEX ALERT", "tables": [T(["Index", "Level", "Move"], "lrr", [stats["name"][:12], f"{stats['last']:,.2f}", ", ".join(stats.get("tags") or [])])],
+            return {"title": item.get("title") or "INDEX ALERT", "tables": [T(["Index", "Level", "Move"], "lrr", [stats["name"], f"{stats['last']:,.2f}", ", ".join(stats.get("tags") or [])])],
                     "notes": [stats["hint"]] if stats.get("hint") else [], "caption": "", "source": stats.get("source") or "NSE", "tags": item.get("tags")}
         if "kv" in stats:
             return {"title": "WEEKLY SUMMARY, TRACK RECORD", "tables": [{"header": ["Measure", "Value"], "aligns": "lr", "rows": stats["kv"]}], "notes": item.get("points") or [], "caption": "",
@@ -252,32 +258,34 @@ def to_row(item):
     return None
 
 
-def render_table(header, rows, aligns):
-    """The rows as aligned monospace text (columns padded to their widest cell)."""
-    every = [header] + [list(map(str, r)) for r in rows]
-    widths = [max(len(str(r[c])) for r in every) for c in range(len(header))]
-    lines = []
-    for r in every:
-        cells = [str(v).ljust(widths[c]) if aligns[c] == "l" else str(v).rjust(widths[c]) for c, v in enumerate(r)]
-        lines.append(" ".join(cells).rstrip())
-    return "<pre>" + esc("\n".join(lines)) + "</pre>"
+def entry_of_row(number, row):
+    """One alert as a numbered entry: the stock in bold, then one bullet for each table of the row ('Move: +2.2% · Price: 401.70'), then its notes and its own hashtags.
+    A row whose table lists several measures (the weekly summary) is a list of 'measure: value' bullets."""
+    first = row["tables"][0]
+    sub = NBSP * 3 + digest.BULLET + " "
+    if len(first["rows"]) > 1:
+        out = [f"{digest.BULLET} {esc(r[0])}: {esc(r[1])}" for r in first["rows"]]
+        out += [f"{digest.BULLET} {esc(n)}" for n in row.get("notes") or []]
+        return chr(10).join(out)
+    out = [f"{number}. <b>{esc(first['rows'][0][0])}</b>"]
+    for table in row["tables"]:
+        out.append(sub + esc(" · ".join(f"{h}: {v}" for h, v in zip(table["header"][1:], table["rows"][0][1:]))))
+    for note in row.get("notes") or []:
+        stock = first["rows"][0][0]
+        out.append(sub + esc(note[len(stock) + 2:] if note.startswith(stock + ": ") else note))
+    tags = tag_line(row.get("tags")).strip()
+    if tags:
+        out.append(NBSP * 3 + tags)
+    return chr(10).join(out)
 
 
 def group_block(group):
-    """The tables of consecutive rows with the same title and columns (the first table of every row, then the second), then notes, caption, source and the hashtags of all its rows."""
+    """The entries of consecutive rows with the same title and columns, numbered from 1, then the caption and the source once."""
     first = group["items"][0]
-    parts = []
-    for n, table in enumerate(first["tables"]):
-        rows = [r for g in group["items"] for r in g["tables"][n]["rows"]]
-        parts.append(render_table(table["header"], rows, table["aligns"]))
-    notes = [n for g in group["items"] for n in g.get("notes", [])]
-    tags = list(dict.fromkeys(t for g in group["items"] for t in (g.get("tags") or [])))[:MAX_TABLE_TAGS]        # a long table does not get a hashtag line as long as itself
-    if notes:
-        parts.append(chr(10).join(esc(n) for n in notes))
-    if first.get("caption"):
-        parts.append(esc(first["caption"]))
-    parts.append(esc("Source: " + first["source"]) + tag_line(tags))
-    return chr(10).join(parts)
+    parts = [entry_of_row(n, row) for n, row in enumerate(group["items"], 1)]
+    tail = ([esc(first["caption"])] if first.get("caption") else []) + [esc("Source: " + first["source"])]
+    parts.append(chr(10).join(tail))
+    return digest.NL2.join(parts)
 
 
 def _section(item):

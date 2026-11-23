@@ -454,12 +454,10 @@ def send_telegram(token, chat_id, text):
     return post_telegram(token, chat_id, text)[0]
 
 
-def outcome_table(price, exit_price, move, days):
-    """The numbers of a target or stop reply as a small aligned table."""
-    fmt = lambda v: f"{v:,.2f}" if abs(v) < 1000 else f"{v:,.1f}"            # one decimal above 1,000 keeps the table narrow
-    cells = [["Alerted", "Now", "Move", "Days"], [fmt(price), fmt(exit_price), f"{move:+.1f}%", str(days)]]
-    widths = [max(len(row[c]) for row in cells) for c in range(4)]
-    return chr(10).join(" ".join(value.rjust(widths[c]) for c, value in enumerate(row)) for row in cells)
+def outcome_figures(price, exit_price, move, days):
+    """The numbers of a target or stop reply as two short bullets (a table wraps on a small phone)."""
+    fmt = lambda v: f"{v:,.2f}" if abs(v) < 1000 else f"{v:,.1f}"
+    return [f"• Alerted at {fmt(price)} · Now {fmt(exit_price)}", f"• Move {move:+.1f}% in {days} trading day{'s' if days != 1 else ''}"]
 
 
 def format_outcome(call, outcome, link=None, markup=False):
@@ -476,10 +474,10 @@ def format_outcome(call, outcome, link=None, markup=False):
     days = outcome["days_held"]
     esc = html.escape if markup else str
     head = f"{'✅ Reference level reached' if hit_target else '⚠️ Volatility risk level reached'}: {esc(name)} ({esc(call['symbol'])})"
-    table = outcome_table(price, exit_price, move, days)
+    figures = outcome_figures(price, exit_price, move, days)
     lines = [f"<b>{head}</b>" if markup else head,
              f"• {HORIZON_TEXT[call['horizon']]} · {side_word.capitalize()} reading",
-             f"<pre>{html.escape(table)}</pre>" if markup else table,
+             *figures,
              f"Price {verb} on {esc(outcome['resolved_date'])}, {days} trading day{'s' if days != 1 else ''} after the alert. Prices in {'rupees' if currency == 'INR' else currency or 'the stock currency'}"]
     if link:
         lines.append("• " + (anchor(link, "Open analysis") if markup else f"Open analysis: {link}"))

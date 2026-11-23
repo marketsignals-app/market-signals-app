@@ -152,8 +152,9 @@ def dispatch(items, state, now, now_ts, table, src, records, send, link_of, toda
             sent.append((name, len(messages)))
             if isinstance(src.get("digest_seen"), dict):             # what was listed is remembered only once it was delivered
                 for item in built:
-                    if item.get("digest_key"):
-                        src["digest_seen"][item["digest_key"]] = now_ts
+                    for key in item.get("digest_keys") or [item.get("digest_key")]:
+                        if key:
+                            src["digest_seen"][key] = now_ts
                 for key in [k for k, v in src["digest_seen"].items() if now_ts - v > 86400]:
                     del src["digest_seen"][key]
             if len(built) > sent_until:
