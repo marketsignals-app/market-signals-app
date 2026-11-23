@@ -63,7 +63,7 @@ def build_snapshot(name, src, now, today_iso):
         elif name == "sectors":
             item = feed_items.sectors_table(src.get("sectors"), now) if src.get("india_open") else None
         elif name == "news_digest":
-            return feed_items.news_digest_lines(src.get("news_dashboard"))
+            return feed_items.news_digest_lines(src.get("news_dashboard"), src.get("digest_seen"), int(now.timestamp()))
         elif name == "ipo_upcoming":
             return feed_items.upcoming_ipo_entries(src.get("ipos"), datetime.fromisoformat(today_iso).date())
         elif name == "events_today":
@@ -150,6 +150,12 @@ def dispatch(items, state, now, now_ts, table, src, records, send, link_of, toda
             if slot:
                 feeds.mark_sent(sent_slots, name, slot)
             sent.append((name, len(messages)))
+            if isinstance(src.get("digest_seen"), dict):             # what was listed is remembered only once it was delivered
+                for item in built:
+                    if item.get("digest_key"):
+                        src["digest_seen"][item["digest_key"]] = now_ts
+                for key in [k for k, v in src["digest_seen"].items() if now_ts - v > 86400]:
+                    del src["digest_seen"][key]
             if len(built) > sent_until:
                 pass                                              # items beyond the last message were counted as "+N more" in it, and stay in the app
         elif requeue:

@@ -249,15 +249,27 @@ def weekly_entries(track_record, learning_summary, health):
 
 
 # ---------- style B: lines ----------
-def news_digest_lines(dashboard, limit=4):
-    """The hourly news and sentiment lines: the most positive and most negative stocks by rule-based sentiment (not signals)."""
+def news_digest_lines(dashboard, seen=None, now_ts=0, limit=4):
+    """The hourly news and sentiment lines: the most positive and most negative stocks by rule-based sentiment (not signals), each with the headline behind the score.
+
+    A stock whose top headline was already listed in the last 24 hours is left out, so the hour-to-hour list shows what is new. `seen` is {key: ts}; each item carries a
+    `digest_key` that the sender records once the message is delivered."""
+    seen = seen or {}
     out = []
     for title, rows in (("MOST POSITIVE NEWS", (dashboard or {}).get("top_positive")), ("MOST NEGATIVE NEWS", (dashboard or {}).get("top_negative"))):
-        for r in (rows or [])[:limit]:
+        shown = 0
+        for r in rows or []:
+            headline = (r.get("headline") or "").strip()
+            key = hashlib.sha1(f"{r.get('symbol')}|{headline or r.get('sentiment')}".encode()).hexdigest()[:16]
+            if shown >= limit or (key in seen and now_ts - seen[key] <= 86400):
+                continue
+            shown += 1
             move = f" · price {_signed(r.get('change_pct'))}" if isinstance(r.get("change_pct"), (int, float)) else ""
-            check = {"confirms": " · confirms the reading", "conflicts": " · conflicts with the reading"}.get(r.get("validation"), "")
-            out.append({"kind": "line", "title": title, "text": f"{r.get('name')} · sentiment {r.get('sentiment'):+d} · impact {r.get('impact')}{move}{check}",
-                        "tags": tags(symbol_tag(r.get("symbol")), "#News"), "link": ""})
+            reading = r.get("reading")
+            check = {"confirms": f" · agrees with our reading ({reading})" if reading else " · agrees with our reading", "conflicts": f" · runs against our reading ({reading})" if reading else " · runs against our reading"}.get(r.get("validation"), "")
+            said = f"{headline[:110]}{'…' if len(headline) > 110 else ''} ({r.get('headline_source') or 'source unknown'}) · " if headline else ""
+            out.append({"kind": "line", "title": title, "text": f"{r.get('name')} · {said}sentiment {r.get('sentiment'):+d}, impact {r.get('impact')}{move}{check}",
+                        "tags": tags(symbol_tag(r.get("symbol")), "#News"), "link": "", "digest_key": key})
     return out
 
 

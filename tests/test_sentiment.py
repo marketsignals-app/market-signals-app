@@ -54,3 +54,12 @@ class ToneTests(unittest.TestCase):
         self.assertGreater(value, 0)
         self.assertIn("word-based, low weight", text)
         self.assertIn("leaning positive", text)
+
+
+class FallingAwayFromRecordsTests(unittest.TestCase):
+    def test_a_retreat_from_a_record_is_not_positive_and_a_record_is_still_positive(self):
+        from engine import sentiment as s
+        self.assertLess(s.score_title("HDFC Bank shares, Bank Nifty retreat sharply from record highs")[0], 0)
+        self.assertLess(s.score_title("Nifty slips from record high")[0], 0)
+        self.assertGreater(s.score_title("Sensex hits record high")[0], 0)
+        self.assertGreater(s.score_title("Company posts record profit")[0], 0)

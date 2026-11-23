@@ -120,6 +120,12 @@ def apply_news_context(record, sector_moves):
     intel["validation"] = news_intel.validate(intel, reading_side(((record.get("short") or {}).get("label"))))
 
 
+def top_story(record):
+    """The most important story behind a stock's news reading (highest impact), or None."""
+    stories = (record.get("news_intel") or {}).get("stories") or []
+    return max(stories, key=lambda x: x.get("impact") or 0) if stories else None
+
+
 def ai_summary(stories, ai_scores, ai_meta):
     """What the optional model job has done and how its scores compare with the rule-based ones (agreement is not accuracy: there is no labelled truth yet)."""
     both = [s for s in stories if s.get("ai_sentiment") is not None and s.get("rule_sentiment") is not None]
@@ -165,7 +171,8 @@ def news_dashboard(records, pool, market_items, names, sector_moves, provider_st
                          key=lambda r: -r["news_intel"]["impact"])[:10]
     brief = lambda r: {"symbol": r["symbol"], "name": r["name"], "sector": r["sector"], "sentiment": r["news_intel"]["sentiment"], "impact": r["news_intel"]["impact"],
                        "interpretation": r["news_intel"]["interpretation"], "change_pct": r.get("change_pct"), "reaction": (r["news_intel"].get("reaction") or {}).get("text"),
-                       "validation": (r["news_intel"].get("validation") or {}).get("state")}
+                       "validation": (r["news_intel"].get("validation") or {}).get("state"), "headline": (top_story(r) or {}).get("title"), "headline_source": (top_story(r) or {}).get("source"),
+                       "reading": alerts.label_text(r["short"]["label"]) if (r.get("short") or {}).get("label") not in (None, "N/A") else None}
     ranked = sorted(with_intel, key=lambda r: r["news_intel"]["sentiment"] * r["news_intel"]["impact"])
     events = {}
     for s in stories:
@@ -920,9 +927,10 @@ def run(args):
 
         sources = {"indices": indices, "india_open": "IN" in open_now, "watch": (overview or {}).get("watch"), "sectors": (conditions.get("IN") or {}).get("sectors"),
                    "news_dashboard": news_dash, "ipos": ipos.get("india") if ipos.get("india_ok") else [], "events": events_data["items"], "track_record": prev_data.get("track_record"),
-                   "learning": prev_data.get("learning"), "health": prev_data.get("data_health"), "bulk_payload": bulk_payload, "today_label": today_label, "names": names, "actions_archive": action_archive}
+                   "learning": prev_data.get("learning"), "health": prev_data.get("data_health"), "bulk_payload": bulk_payload, "digest_seen": dict(state.get("digest_seen") or {}), "today_label": today_label, "names": names, "actions_archive": action_archive}
         send_one = (lambda text, reply_to=None: send_formatted(token, chat, text, reply_to)) if token and chat else None
         feed_state, calls, _sent = feed_run.dispatch(items + extra, state, now, now_ts, feeds.settings(alert_cfg), sources, by_record, send_one, link_of, today_ist)
+        feed_state["digest_seen"] = sources["digest_seen"]
         if not (token and chat) and lines:
             print("New alerts are in the app. Telegram is not set up (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID).")
     else:                                                 # the earlier behaviour: one digest per run (alert_cfg "scheduled_feeds": false)

@@ -27,6 +27,9 @@ PHRASES = {
     "ahead of estimates": 1.5, "better than expected": 1.5, "raises guidance": 2, "raises outlook": 1.5, "order win": 1.5, "wins order": 1.5, "bags order": 1.5,
     "secures order": 1.5, "dividend hike": 1.5, "special dividend": 1, "share buyback": 1, "buyback": 1, "stake sale": -0.5, "rating upgrade": 2,
     "target raised": 1.5, "price target raised": 1.5, "strong results": 1.5, "strong growth": 1.5, "profit jumps": 2, "profit rises": 1.5, "profit surges": 2,
+    # a record or high that the price is falling away from is not good news
+    "from record high": -0.5, "from record highs": -0.5, "off record high": -0.5, "off record highs": -0.5, "below record high": -0.5, "from all-time high": -0.5,
+    "from all-time highs": -0.5, "off all-time high": -0.5, "below all-time high": -0.5,
     "misses estimates": -2, "miss estimates": -2, "below estimates": -1.5, "worse than expected": -1.5, "cuts guidance": -2, "cuts outlook": -1.5,
     "profit falls": -1.5, "profit drops": -1.5, "profit plunges": -2, "net loss": -1.5, "rating downgrade": -2, "target cut": -1.5, "price target cut": -1.5,
     "show cause notice": -1.5, "raid": -1.5, "tax raid": -2, "stake sold": -0.5, "promoter pledge": -1, "debt default": -2, "going concern": -2,
@@ -39,9 +42,10 @@ POSITIVE = {
     "record": 1, "boost": 1, "boosts": 1, "improves": 1, "improved": 1, "recovers": 1, "recovery": 1, "bullish": 1.5, "optimistic": 1, "acquires": 0.7, "deal": 0.4,
     "dividend": 0.5, "bonus": 0.7, "buy": 0.5, "overweight": 1,
 }
+PHRASES_LONGEST_FIRST = sorted(PHRASES.items(), key=lambda kv: -len(kv[0]))
 NEGATIVE = {
     "plunge": -2, "plunges": -2, "slump": -2, "slumps": -2, "crash": -2, "crashes": -2, "tumble": -1.5, "tumbles": -1.5, "fall": -1, "falls": -1, "drop": -1,
-    "drops": -1, "slide": -1, "slides": -1, "sink": -1.5, "sinks": -1.5, "decline": -1, "declines": -1, "down": -0.3, "downgrade": -1.5, "downgraded": -1.5,
+    "drops": -1, "slide": -1, "slides": -1, "retreat": -1, "retreats": -1, "retreated": -1, "slip": -1, "slips": -1, "slipped": -1, "cools": -0.5, "erodes": -1, "sink": -1.5, "sinks": -1.5, "decline": -1, "declines": -1, "down": -0.3, "downgrade": -1.5, "downgraded": -1.5,
     "underperform": -1.5, "misses": -1.5, "miss": -1.5, "weak": -1, "weakness": -1, "loss": -1, "losses": -1, "probe": -1, "penalty": -1.5, "fine": -1, "fined": -1.5,
     "lawsuit": -1, "sued": -1, "resigns": -1, "resignation": -1, "exits": -0.5, "ban": -1.5, "banned": -1.5, "recall": -1.5, "fire": -1, "shutdown": -1.5, "warns": -1.5,
     "warning": -1, "default": -2, "bankruptcy": -2, "insolvency": -2, "scam": -2, "fraud": -2, "cuts": -1, "cut": -1, "layoffs": -1.5, "slowdown": -1, "bearish": -1.5,
@@ -60,7 +64,7 @@ def score_title(title):
         return 0.0, []
     total, hits = 0.0, []
     remaining = text
-    for phrase, value in PHRASES.items():
+    for phrase, value in PHRASES_LONGEST_FIRST:                  # a longer phrase wins over the shorter one inside it ("from record high" over "record high")
         position = remaining.find(phrase)
         if position >= 0:
             before = _TOKEN.findall(remaining[:position])[-3:]

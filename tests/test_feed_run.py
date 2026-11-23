@@ -271,6 +271,45 @@ class BreachMessageTests(unittest.TestCase):
         self.assertEqual(send2.replies, [1001])
 
 
+class NewsDigestTests(unittest.TestCase):
+    ROW = {"symbol": "TATACONSUM.NS", "name": "Tata Consumer Products", "sentiment": 64, "impact": 39, "change_pct": -1.1, "validation": "confirms", "reading": "Aligned bullish",
+           "headline": "Tata Consumer Q2 profit jumps 20%, beats estimates", "headline_source": "Mint"}
+
+    def test_each_line_names_the_headline_and_says_in_words_what_the_news_agrees_with(self):
+        items = fi.news_digest_lines({"top_positive": [self.ROW], "top_negative": []}, {}, TS)
+        text = items[0]["text"]
+        self.assertIn("Tata Consumer Q2 profit jumps 20%, beats estimates (Mint)", text)
+        self.assertIn("agrees with our reading (Aligned bullish)", text)
+        self.assertNotIn("confirms the reading", text)
+        conflict = fi.news_digest_lines({"top_positive": [], "top_negative": [{**self.ROW, "validation": "conflicts"}]}, {}, TS)[0]["text"]
+        self.assertIn("runs against our reading (Aligned bullish)", conflict)
+
+    def test_a_stock_listed_in_the_last_day_with_the_same_headline_is_left_out(self):
+        first = fi.news_digest_lines({"top_positive": [self.ROW], "top_negative": []}, {}, TS)
+        seen = {first[0]["digest_key"]: TS}
+        self.assertEqual(fi.news_digest_lines({"top_positive": [self.ROW], "top_negative": []}, seen, TS + 3600), [])
+        newer = {**self.ROW, "headline": "Tata Consumer announces new plant"}
+        self.assertEqual(len(fi.news_digest_lines({"top_positive": [newer], "top_negative": []}, seen, TS + 3600)), 1, "a new headline is listed again")
+        self.assertEqual(len(fi.news_digest_lines({"top_positive": [self.ROW], "top_negative": []}, seen, TS + 90000)), 1, "after a day it can return")
+
+    def test_a_long_headline_is_cut_and_a_missing_one_falls_back_to_the_score(self):
+        long = {**self.ROW, "headline": "x" * 200}
+        self.assertIn("…", fi.news_digest_lines({"top_positive": [long], "top_negative": []}, {}, TS)[0]["text"])
+        none = fi.news_digest_lines({"top_positive": [{**self.ROW, "headline": None, "reading": None}], "top_negative": []}, {}, TS)[0]["text"]
+        self.assertIn("sentiment +64", none)
+        self.assertIn("agrees with our reading", none)
+
+    def test_delivery_records_what_was_listed_and_a_failed_send_records_nothing(self):
+        dash = {"top_positive": [self.ROW], "top_negative": []}
+        for fail, expected in ((False, 1), (True, 0)):
+            send = FakeTelegram(fail_after=0 if fail else None)
+            src = {"news_dashboard": dash, "digest_seen": {}}
+            slot = feeds.slot_of(TABLE["news_digest"], datetime(2026, 11, 23, 10, 50, tzinfo=IST))
+            feed_run.dispatch([], {"feeds_sent": {"news_digest": "x"}, "feed_queue": []}, datetime(2026, 11, 23, 10, 50, tzinfo=IST), int(datetime(2026, 11, 23, 10, 50, tzinfo=IST).timestamp()),
+                              TABLE, src, {}, send, lambda i: None, "2026-11-23")
+            self.assertEqual(len(src["digest_seen"]), expected)
+
+
 class DispatchTests(unittest.TestCase):
     def test_the_first_deployment_starts_with_the_next_slot_and_sends_nothing(self):
         send = FakeTelegram()

@@ -14,7 +14,7 @@ from pathlib import Path
 
 FILE = "alerts/memory.json"
 KEYS = ("seen_alerts", "alert_sides", "news_alert_history", "deal_seen", "mover_seen", "index_seen", "briefs_sent", "notified_outcomes", "reply_queue",
-        "feeds_sent", "feed_queue", "filing_seen", "regime_seen", "health_seen", "vol_seen", "announced", "action_seen", "surv_state", "ban_state")
+        "feeds_sent", "feed_queue", "filing_seen", "regime_seen", "health_seen", "vol_seen", "announced", "action_seen", "surv_state", "ban_state", "digest_seen")
 
 
 def read(directory):
