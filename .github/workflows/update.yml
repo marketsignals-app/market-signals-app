@@ -58,7 +58,7 @@ jobs:
           REPO="${GITHUB_REPOSITORY#*/}"
           python -m engine.build --out site --prev "https://$OWNER.github.io/$REPO/"
 
-      - name: Verify the build (nothing is published if this fails; the site stays on the last good build)
+      - name: Verify the build is intact (nothing is published if it is not; the QA sweep is printed as a report)
         run: python tools/verify_build.py site
 
       - uses: actions/configure-pages@v5

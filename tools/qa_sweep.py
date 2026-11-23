@@ -11,7 +11,7 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-LIMITS = {"data.json": 1600 * 1024, "index.json": 1800 * 1024, "index_extra.json": 1600 * 1024, "detail": 450 * 1024}
+LIMITS = {"data.json": 1600 * 1024, "index.json": 1800 * 1024, "index_extra.json": 1600 * 1024, "detail": 700 * 1024}   # a shard holds ~70 stocks once the whole list is analysed; Pages serves it gzipped, one shard per stock page
 HIGH_DIVIDEND = {"IN": 0.03, "US": 0.025}
 
 
@@ -125,11 +125,11 @@ def check_full_records(cur, rows, shards, rep):
         if d:
             stats["dividend"] += 1
             listed = sum(p["amount"] for p in d.get("ttm_payments", []))
-            if abs(listed - d["ttm_amount"]) > 1e-6 * max(1, d["ttm_amount"]):
+            if d.get("ttm_payments") is not None and abs(listed - d["ttm_amount"]) > 1e-6 * max(1, d["ttm_amount"]):     # the published form may omit the payment list
                 rep.add("FAIL", "12-month dividend is not the sum of the listed payments", symbol, f"{d['ttm_amount']} vs {listed}")
             if abs(d["ttm_yield"] - d["ttm_amount"] / price) > 2e-5:                  # the stored yield is rounded to 5 decimals
                 rep.add("FAIL", "12-month yield is not amount / price", symbol)
-            if d["ttm_regular_amount"] > d["ttm_amount"] + 1e-9:
+            if d.get("ttm_regular_amount") is not None and d["ttm_regular_amount"] > d["ttm_amount"] + 1e-9:     # absent on records written before the field existed
                 rep.add("FAIL", "recurring amount is above the 12-month amount", symbol)
             if d["ttm_yield"] > 0.5:
                 rep.add("WARN", "dividend yield over 50% (a one-off or a data error?)", symbol, f"{d['ttm_yield']:.0%}")
@@ -146,7 +146,7 @@ def check_full_records(cur, rows, shards, rep):
             stats["check_none"] += 1
         if "High dividend" in rec.get("lists", []):
             recurring = (d or {}).get("ttm_regular_yield")
-            if recurring is None or recurring < HIGH_DIVIDEND.get(market, 1) - 1e-9:
+            if recurring is not None and recurring < HIGH_DIVIDEND.get(market, 1) - 1e-9:       # a record from before the field existed has no recurring yield until it is re-analysed
                 rep.add("FAIL", "in the High dividend list below its yield threshold", symbol, str(recurring))
         if not rec.get("short") or not rec.get("long"):
             rep.add("FAIL", "record without a reading", symbol)

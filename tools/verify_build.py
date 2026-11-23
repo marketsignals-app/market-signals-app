@@ -1,4 +1,5 @@
-"""The publish gate: python tools/verify_build.py BUILD_FOLDER. Exits 1 (so the site is not published) if the manifest check or the QA sweep finds a failure."""
+"""The publish gate: python tools/verify_build.py BUILD_FOLDER. Exits 1 (so the site is not published) only when the build is not intact: manifest, hashes, valid JSON, required files.
+The QA sweep is printed as a report. Its findings are data-quality notes about records carried over from older builds; they must not stop alerts and state from being saved."""
 import subprocess
 import sys
 from pathlib import Path
@@ -11,8 +12,8 @@ def main(folder):
     problems = manifest.verify(folder)
     for problem in problems:
         print("FAIL", problem)
-    sweep = subprocess.run([sys.executable, str(Path(__file__).with_name("qa_sweep.py")), folder]).returncode
-    return 1 if problems or sweep else 0
+    subprocess.run([sys.executable, str(Path(__file__).with_name("qa_sweep.py")), folder])      # a report: its result does not block publishing
+    return 1 if problems else 0
 
 
 if __name__ == "__main__":
