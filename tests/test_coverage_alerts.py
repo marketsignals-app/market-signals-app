@@ -285,6 +285,14 @@ class BriefTests(unittest.TestCase):
         lines = sessions.preopen_brief(([], [], None, None), [("S&P 500", 4.7, "2026-11-23"), ("US VIX", -25.8, "2026-11-23")], {}, [])
         self.assertIn("Overnight (last close, 23 Nov, against the close before): S&P 500 +4.7%, US VIX -25.8%", lines)
 
+    def test_a_holiday_is_told_from_the_age_of_the_last_trades(self):
+        yesterday, today = 1795427974, 1795427974 + 86400            # 23 Nov 15:29 IST and 24 Nov 15:29 IST
+        quotes = {s: {"time": yesterday} for s in ("A.NS", "B.NS", "C.NS")}
+        market = {s: "IN" for s in quotes}
+        self.assertFalse(sessions.traded_on(quotes, market, "IN", "2026-11-24"))
+        self.assertTrue(sessions.traded_on({s: {"time": today} for s in quotes}, market, "IN", "2026-11-24"))
+        self.assertFalse(sessions.traded_on({"A.NS": {"time": today}}, {"A.NS": "IN"}, "IN", "2026-11-24"), "a few stocks are needed")
+
     def test_preopen_brief_content(self):
         pre = ([("AAA.NS", 5.0, 100)], [("BBB.NS", -4.0, 50)], 900, 800)
         lines = sessions.preopen_brief(pre, [("S&P 500", -1.9)], {"date": "16-Nov-2026", "FII/FPI": 4864.68, "DII": -3519.05}, ["Acme (earnings)"])

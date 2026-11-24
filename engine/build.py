@@ -860,8 +860,9 @@ def run(args):
         body = []
         if window == "in_preopen":
             payload, nse["preopen"] = sessions.Source("NSE pre-open", sessions.PREOPEN).fetch(now, nse.get("preopen"))
-            body = sessions.preopen_brief(sessions.parse_preopen(payload) if payload else None, cues, flows, todays, wide.stock_watch(ipo_levels, quotes))
-        elif window == "in_postclose" and "IN" not in open_now:
+            pre = sessions.parse_preopen(payload) if payload else None
+            body = sessions.preopen_brief(pre, cues, flows, todays, wide.stock_watch(ipo_levels, quotes)) if pre and (pre[0] or pre[1]) else []      # no pre-open table means a holiday or an NSE outage: no brief
+        elif window == "in_postclose" and "IN" not in open_now and sessions.traded_on(quotes, market_of, "IN", today_ist):
             up, down, extremes = wide.top_moves(quotes, market_of, "IN")
             payload, nse["deals"] = sessions.Source("NSE large deals", sessions.LARGE_DEALS).fetch(now, nse.get("deals"))
             body = sessions.postclose_brief(indices, up, down, extremes, flows, today_label, sessions.parse_deals(payload, today_label), todays) if indices else []

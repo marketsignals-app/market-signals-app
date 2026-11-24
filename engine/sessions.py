@@ -179,6 +179,16 @@ def _stock_list(rows):
     return ", ".join(f"{s.replace('.NS', '')} {p:+.1f}%" for s, p, *_ in rows)
 
 
+def traded_on(quotes, market_of, market, day_iso, minimum=3):
+    """True when at least a few stocks of the market last traded on this IST day. False on an exchange holiday, when every last trade is older."""
+    count = 0
+    for symbol, q in quotes.items():
+        t = q.get("time")
+        if market_of.get(symbol) == market and isinstance(t, (int, float)) and datetime.fromtimestamp(t + 19800, timezone.utc).strftime("%Y-%m-%d") == day_iso:
+            count += 1
+    return count >= minimum
+
+
 def preopen_brief(pre, cues, flows, events_today, watch=()):
     """Lines for the India pre-open brief. pre: parse_preopen output or None. cues: [(name, pct)]. flows: parse_flows or {}.
     watch: recently listed stocks with their listing-day range, the levels an IPO breakout or breakdown is measured from."""
