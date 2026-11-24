@@ -192,7 +192,14 @@ def preopen_brief(pre, cues, flows, events_today, watch=()):
     else:
         lines.append("Pre-open data not available this run")
     if cues:
-        lines.append("Overnight: " + ", ".join(f"{n} {p:+.1f}%" for n, p in cues))
+        dates = sorted({c[2] for c in cues if len(c) > 2 and c[2]})
+        when = ""
+        if dates:
+            try:
+                when = f" (last close, {datetime.strptime(dates[-1], '%Y-%m-%d').strftime('%d %b').lstrip('0')}, against the close before)"
+            except ValueError:
+                pass
+        lines.append(f"Overnight{when}: " + ", ".join(f"{c[0]} {c[1]:+.1f}%" for c in cues))
     if flows.get("date"):
         lines.append(f"Previous day net flows ({flows['date']}): FII/FPI {flows.get('FII/FPI', 0):+,.0f} cr, DII {flows.get('DII', 0):+,.0f} cr")
     if events_today:

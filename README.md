@@ -286,8 +286,7 @@ the run in `engine/feed_run.py`). Times are IST, weekdays. The app's own alert l
 | Block deals | 15 min | market hours | only if new |
 | Bulk deals | daily | from 18:00 (retried for 4 hours until the NSE publishes them) | the day's largest, with the client as the NSE publishes it |
 | Important filings | 15 min | 08:00 to 22:00 | official NSE and BSE filings with a rule-based impact of 70 or more, once each |
-| Company headlines | 60 min | 09:00 to 21:00 | only if new |
-| News and sentiment | 60 min | 09:30 to 21:30 | most positive and most negative news by rule-based sentiment (not a signal) |
+| Company headlines, Latest important news | off | | switched off on 24 Nov 2026: media headlines matched some stocks wrongly (name collisions). Telegram carries official NSE and BSE announcements instead; the site's News tab still lists media headlines. A feed can be switched back on with `"enabled": true` in `config/alerts.json` |
 | Upcoming IPOs | daily 09:00 | | open now, closing today, opening within 7 days, listing within 3 days |
 | Today's events | daily 08:30 | | confirmed results, ex-dates and the like |
 | Weekly summary | Sunday 18:00 | | track record, learning outlook (still "no better than the base rate"), data health |
@@ -469,8 +468,7 @@ check the first run's log. Turn it off with the repository variable `NEWS_AI` = 
 **Rough news tone (experimental, website only).** `engine/sentiment.py` scores a headline from -1 to +1 with a financial word list (negation, phrases with the longest
 phrase winning, intensity words). It feeds the rough-tone figures on the News tab, the stock page and the readings table, each labelled experimental. It was part of the short-term
 reading (5 points) until 23 Nov 2026 and was removed because it had never been tested against labelled headlines; an example the Telegram digest exposed was "retreat sharply from record
-highs" scoring positive (fixed, but the list is still a list). A word list reads words, not meaning. Telegram carries no tone at all: the hourly "Latest important news" feed is headlines
-from the news outlets ranked by impact (the importance of the event type, the outlet's credibility and recency), and filings show their importance, not a tone. Headlines are shown exactly as
+highs" scoring positive (fixed, but the list is still a list). A word list reads words, not meaning. Telegram carries no tone at all and no media headlines (those feeds are off); filings show their importance, not a tone. Headlines are shown exactly as
 published. A trained or pretrained model would need a labelled test set first (see the Learning section).
 
 **Data learning loop** (`engine/data_learning.py`, state kept in `state.json`). Every run records which stocks had data incidents (a series missing the

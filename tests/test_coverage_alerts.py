@@ -281,6 +281,10 @@ class BriefTests(unittest.TestCase):
         up, down, adv, dec = sessions.parse_preopen(payload)
         self.assertEqual(([r[0] for r in up], [r[0] for r in down], adv, dec), (["AAA.NS", "BBB.NS"], ["BBB.NS", "AAA.NS"], 900, 800))
 
+    def test_the_overnight_line_names_the_date_of_the_moves(self):
+        lines = sessions.preopen_brief(([], [], None, None), [("S&P 500", 4.7, "2026-11-23"), ("US VIX", -25.8, "2026-11-23")], {}, [])
+        self.assertIn("Overnight (last close, 23 Nov, against the close before): S&P 500 +4.7%, US VIX -25.8%", lines)
+
     def test_preopen_brief_content(self):
         pre = ([("AAA.NS", 5.0, 100)], [("BBB.NS", -4.0, 50)], 900, 800)
         lines = sessions.preopen_brief(pre, [("S&P 500", -1.9)], {"date": "16-Nov-2026", "FII/FPI": 4864.68, "DII": -3519.05}, ["Acme (earnings)"])

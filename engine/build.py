@@ -850,7 +850,7 @@ def run(args):
     today_ist = now.astimezone(sessions.IST).strftime("%Y-%m-%d")
     today_label = now.astimezone(sessions.IST).strftime("%d-%b-%Y")
     todays = [f"{e['name']} ({e['type'].replace('_', ' ')})" for e in events_data["items"] if e["date"] == today_ist and e["market"] == "IN" and e.get("verification") == "CONFIRMED"]
-    cues = [(w["name"], w["change_pct"]) for w in (overview or {}).get("watch", []) if w.get("symbol") in ("^GSPC", "^IXIC", "^DJI", "^VIX") and w.get("change_pct") is not None]
+    cues = [(w["name"], w["change_pct"], w.get("as_of")) for w in (overview or {}).get("watch", []) if w.get("symbol") in ("^GSPC", "^IXIC", "^DJI", "^VIX") and w.get("change_pct") is not None]
     brief_lines, brief_items = [], []
     for window in sessions.due_windows(now, briefs_sent):
         flows = {}

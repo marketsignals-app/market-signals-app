@@ -95,6 +95,7 @@ def dispatch(items, state, now, now_ts, table, src, records, send, link_of, toda
     breaches = [i for i in items if i.get("feed") == "volatility"]
     items = [i for i in items if i.get("feed") != "volatility"]
     now_items, held = feeds.split(urgent_entries(items, now))
+    held = [(feed, item) for feed, item in held if feed in table]            # a feed that is switched off (media news) is not queued
     announced = {k: v for k, v in (state.get("announced") or {}).items() if isinstance(v, dict) and now_ts - v.get("ts", 0) <= ANNOUNCED_DAYS * 86400}
     individually = breaches[:BREACHES_PER_RUN] if send is not None and "feeds_sent" in state else []
     held += [("volatility", i) for i in breaches if i not in individually]

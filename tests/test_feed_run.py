@@ -122,6 +122,16 @@ class RenderTests(unittest.TestCase):
         self.assertIn("#BulkDeal", text)
 
 
+class MediaNewsOffTests(unittest.TestCase):
+    def test_media_news_feeds_are_off_by_default_and_their_items_are_not_queued(self):
+        self.assertNotIn("news", TABLE)
+        self.assertNotIn("news_digest", TABLE)
+        news = {"kind": "news", "symbol": "A.NS", "name": "A", "title": "Headline", "source": "Mint", "link": "https://example.com/x", "age_min": 5}
+        state, _, _ = feed_run.dispatch([news], {"feeds_sent": {}, "feed_queue": []}, NOW, int(NOW.timestamp()), TABLE, {}, {}, None, lambda i: None, "2026-11-23")
+        self.assertEqual(state["feed_queue"], [])
+        self.assertIn("filings", TABLE, "official NSE and BSE filings stay")
+
+
 class BuilderTests(unittest.TestCase):
     def test_indexes_commodities_and_sectors(self):
         self.assertIsNone(fi.indexes_table({}, NOW))
@@ -333,7 +343,7 @@ class NewsDigestTests(unittest.TestCase):
         for fail, expected in ((False, 1), (True, 0)):
             send = FakeTelegram(fail_after=0 if fail else None)
             src = {"news_dashboard": {"stories": [self.story()]}, "digest_seen": {}}
-            feed_run.dispatch([], {"feeds_sent": {"news_digest": "x"}, "feed_queue": []}, when, int(when.timestamp()), TABLE, src, {}, send, lambda i: None, "2026-11-23")
+            feed_run.dispatch([], {"feeds_sent": {"news_digest": "x"}, "feed_queue": []}, when, int(when.timestamp()), feeds.settings({"feeds": {"news_digest": {"enabled": True}}}), src, {}, send, lambda i: None, "2026-11-23")
             self.assertEqual(len(src["digest_seen"]), expected)
 
     def test_a_filing_message_shows_importance_not_a_tone(self):
