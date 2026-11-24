@@ -272,7 +272,7 @@ the run in `engine/feed_run.py`). Times are IST, weekdays. The app's own alert l
 | Feed | Cadence | Window | Sent when |
 |---|---|---|---|
 | Indexes | 60 min | 09:15 to 15:30 | every slot while India is open (a table) |
-| Commodities and currency | 40 min | 09:00 to 23:30 | every slot, each figure with its data date and a STALE mark when older than 2 days |
+| Commodities and currency | 2.5 hours | 09:00 to 23:30 | every slot, each figure with its data date and a STALE mark when older than 2 days |
 | Sector growth | 90 min | 09:15 to 15:30 | every slot: strongest and weakest sectors of our list, with the stock count behind each |
 | Movers | 30 min | market hours | only if new |
 | Bullish and bearish readings | 15 min | market hours | only if new; a reading that reversed while waiting is dropped |

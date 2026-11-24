@@ -95,7 +95,7 @@ def line_item(number, item):
         tags = stock_tags(item, "#News")
     else:
         read = f" {alerts.anchor(item['link'], 'Read article')}" if str(item.get("link") or "").startswith("https://") else ""
-        body = esc(digest.quiet(item["text"])) + read
+        body = esc(digest.quiet(item.get("text") or item.get("name") or "")) + read
         tags = item.get("tags")
     return f"{number}. {body}" + tag_line(tags)
 
@@ -234,7 +234,7 @@ def to_row(item):
             return {"title": "UPCOMING IPOS", "tables": [T(["IPO", "Open-Close", "Price"], "lrr", [name, day_range(stats.get("open"), stats.get("close")), money(stats.get("price"))]),
                                                        T(["IPO", "Sub", "GMP"], "lrr", [name, f"{stats['sub']:.1f}x" if isinstance(stats.get("sub"), (int, float)) else "-",
                                                                                             pct(stats.get("gmp_pct"), 0) if stats.get("gmp_pct") is not None else "-"])],
-                    "notes": [f"{name}: {stats['status']}, lists {one_day(stats.get('listing'))}"], "caption": "Sub = subscription so far. GMP = grey-market premium, unofficial. Price in rupees",
+                    "notes": [f"{name}: {stats['status']}" + ("" if str(stats["status"]).startswith("lists") else f", lists {one_day(stats.get('listing'))}")], "caption": "Sub = subscription so far. GMP = grey-market premium, unofficial. Price in rupees",
                     "source": "Investorgain and the exchanges", "tags": item.get("tags")}
         if "ex" in stats:
             return {"title": "SHARE ACTIONS COMING UP", "tables": [T(["Stock", "Action", "Ex-date"], "llr", [sym, stats["label"], (stats.get("ex") or "-")[5:]]),
@@ -344,6 +344,8 @@ def render_feed(items, links, now_ts, label, feed_tags=(), icon="\U0001F4CA", ma
                 parts.append((list_item(number, filing_card(item), stock_tags(item, "#Filing")), False))
             elif kind == "entry":
                 parts.append((list_item(number, entry_card(item, link), item.get("tags")), False))
+            elif kind == "brief":
+                parts.append((list_item(number, digest.brief_card(item, link)), False))
             else:
                 parts.append((line_item(number, item), True))
         if group:

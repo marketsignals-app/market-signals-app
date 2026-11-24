@@ -47,10 +47,14 @@ class CorporateActionTests(unittest.TestCase):
         records = a.corporate_action_records(self.ROWS, TS)
         self.assertEqual([(r["symbol"], r["type"], r["ex_date"]) for r in records], [("ABC.NS", "bonus", "2026-11-25"), ("GHI.NS", "split", "2026-12-01"), ("OLD.NS", "buyback", "2026-11-01")])
 
+    def test_an_action_with_the_same_ex_and_record_date_is_listed_once(self):
+        rows = a.corporate_action_records([{"symbol": "ABC", "comp": "Abc", "subject": "Rights issue", "exDate": "25-Nov-2026", "recDate": "25-Nov-2026"}], 1)
+        self.assertEqual(len(a.upcoming_dates(rows, date(2026, 11, 24), 7)), 1)
+
     def test_upcoming_dates_cover_the_next_week_soonest_first(self):
         rows = a.upcoming_dates(a.corporate_action_records(self.ROWS, TS), date(2026, 11, 23), 7)
-        self.assertEqual([(w.isoformat(), k, r["symbol"]) for w, k, r in rows], [("2026-11-25", "ex_date", "ABC.NS"), ("2026-11-26", "record_date", "ABC.NS")], "the split on 1 December is 8 days away")
-        self.assertEqual(len(a.upcoming_dates(a.corporate_action_records(self.ROWS, TS), date(2026, 11, 23), 8)), 3)
+        self.assertEqual([(w.isoformat(), k, r["symbol"]) for w, k, r in rows], [("2026-11-25", "ex_date", "ABC.NS")], "one row per action, and the split on 1 December is 8 days away")
+        self.assertEqual(len(a.upcoming_dates(a.corporate_action_records(self.ROWS, TS), date(2026, 11, 23), 8)), 2)
 
 
 class CircuitTests(unittest.TestCase):
@@ -158,7 +162,7 @@ class AlertItemTests(unittest.TestCase):
     def test_ex_dates_are_listed_for_the_week_ahead(self):
         records = a.corporate_action_records(CorporateActionTests.ROWS, TS)
         entries = fi.action_dates_entries(records, date(2026, 11, 23))
-        self.assertEqual(len(entries), 2)
+        self.assertEqual(len(entries), 1, "one entry per action, not one for each of its dates")
         self.assertIn("ex-date 25 Nov", entries[0]["heading"])
 
 

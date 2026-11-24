@@ -13,11 +13,11 @@ def at(day, hour, minute):
 
 
 class SlotTests(unittest.TestCase):
-    def test_a_forty_minute_feed_has_slots_from_the_start_of_its_window(self):
-        spec = TABLE["commodities"]                              # 09:00, every 40 minutes
+    def test_a_two_and_a_half_hour_feed_has_slots_from_the_start_of_its_window(self):
+        spec = TABLE["commodities"]                              # 09:00, every 150 minutes
         self.assertEqual(feeds.slot_of(spec, at(23, 9, 5)), "2026-11-23#0")
-        self.assertEqual(feeds.slot_of(spec, at(23, 9, 41)), "2026-11-23#1")
-        self.assertEqual(feeds.slot_of(spec, at(23, 10, 21)), "2026-11-23#2")
+        self.assertEqual(feeds.slot_of(spec, at(23, 11, 41)), "2026-11-23#1")
+        self.assertEqual(feeds.slot_of(spec, at(23, 14, 11)), "2026-11-23#2")
 
     def test_outside_the_window_or_on_a_non_trading_day_there_is_no_slot(self):
         self.assertIsNone(feeds.slot_of(TABLE["movers"], at(23, 9, 0)))           # before 09:15
@@ -51,7 +51,7 @@ class DueTests(unittest.TestCase):
         self.assertIn("readings", feeds.due(sent, now + timedelta(minutes=16), TABLE), "the next 15-minute slot")
 
     def test_the_cadences_are_the_ones_asked_for(self):
-        self.assertEqual([TABLE[k]["every"] for k in ("indexes", "commodities", "sectors", "movers", "readings")], [60, 40, 90, 30, 15])
+        self.assertEqual([TABLE[k]["every"] for k in ("indexes", "commodities", "sectors", "movers", "readings")], [60, 150, 90, 30, 15])
 
     def test_config_can_change_a_cadence_and_bad_values_are_ignored(self):
         table = feeds.settings({"feeds": {"movers": {"every": 20}, "indexes": {"every": 0}, "nonsense": {"every": 5}, "sectors": {"enabled": False}}})

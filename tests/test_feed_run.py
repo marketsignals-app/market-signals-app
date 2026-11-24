@@ -89,6 +89,12 @@ class RenderTests(unittest.TestCase):
         self.assertIn("Source: NSE all-indices feed", text)
         self.assertIn("#Nifty50", text)
 
+    def test_a_scheduled_brief_renders_as_a_heading_with_bullets(self):
+        brief = {"kind": "brief", "symbol": "", "name": "India post-close brief", "window": "in_postclose", "lines": ["Nifty 50 closed at 25,366.40 (-1.68%)", "Advances 120, declines 380"], "ts": TS}
+        text = self.render([brief])[0][0]
+        self.assertIn("<b>India post-close brief</b>", text)
+        self.assertIn("Nifty 50 closed at 25,366.40 (-1.68%)", text)
+
     def test_outside_text_is_escaped(self):
         item = {"kind": "news", "symbol": "A.NS", "name": "A <b>", "title": "x <script>alert(1)</script>", "source": "S&P", "link": "https://x.com/a", "age_min": 5}
         text = self.render([item])[0][0]

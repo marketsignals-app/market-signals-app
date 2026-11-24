@@ -27,7 +27,7 @@ FEEDS = {
     "filings": {"label": "Important filings", "every": 15, "start": "08:00", "end": "22:00", "days": WEEKDAYS, "kind": "event", "max_age_h": 12},
     "news": {"label": "Company headlines", "every": 60, "start": "09:00", "end": "21:00", "days": WEEKDAYS, "kind": "event", "max_age_h": 12},
     "indexes": {"label": "Indexes", "every": 60, **MARKET, "kind": "snapshot"},
-    "commodities": {"label": "Commodities and currency", "every": 40, "start": "09:00", "end": "23:30", "days": WEEKDAYS, "kind": "snapshot"},
+    "commodities": {"label": "Commodities and currency", "every": 150, "start": "09:00", "end": "23:30", "days": WEEKDAYS, "kind": "snapshot"},
     "sectors": {"label": "Sector growth", "every": 90, **MARKET, "kind": "snapshot"},
     "bulk_deals": {"label": "Bulk deals", "every": 1440, "start": "18:00", "end": "18:00", "days": WEEKDAYS, "grace": 240, "kind": "snapshot"},
     "news_digest": {"label": "Latest important news", "every": 60, "start": "09:30", "end": "21:30", "days": WEEKDAYS, "kind": "snapshot"},

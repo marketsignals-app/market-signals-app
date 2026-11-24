@@ -142,13 +142,14 @@ def upcoming_dates(records, today, days=7):
     for r in records or []:
         if r.get("type") not in UPCOMING_TYPES:
             continue
-        for key in ("ex_date", "record_date"):
+        for key in ("ex_date", "record_date"):                # one row per action: its soonest date in the window (the entry shows both dates)
             try:
                 when = datetime.strptime(r.get(key) or "", "%Y-%m-%d").date()
             except ValueError:
                 continue
             if today <= when <= end:
                 rows.append((when, key, r))
+                break
     rows.sort(key=lambda x: (x[0], x[2]["symbol"] or ""))
     return rows
 
