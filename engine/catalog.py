@@ -142,6 +142,7 @@ def _compact(value):
 def extra_row(record):
     """What the table needs only for its technical filters and its Valuation, Dividend, Technical and Risk column views: the stock's indicator values, pattern
     names, pressure and fundamentals. They are in index_extra.json, which the page fetches only when one of those is used, so the start-up file stays small."""
+    calc = derived(record) if record else None                     # first: it also corrects the record's EV/EBITDA that the fundamentals below carry
     row = {"ind": {k: _round(v, 3) for k, v in ((record or {}).get("indicators") or {}).items() if k in TECH_KEYS and isinstance(v, (int, float))},
            "pressure": ((record or {}).get("pressure") or {}).get("label"),
            "patterns": [[p["name"], p.get("bias")] for p in (record or {}).get("patterns") or [] if isinstance(p, dict) and p.get("name")],
@@ -149,7 +150,7 @@ def extra_row(record):
     if record:
         risk = record.get("risk") or {}
         row["risk"] = {k: _round(risk.get(k), 3) for k in ("beta", "max_drawdown") if isinstance(risk.get(k), (int, float))}
-        row["calc"] = derived(record)
+        row["calc"] = calc
         row["fin"] = 1 if ratios.is_financial(record.get("fundamentals")) else None
     return {k: v for k, v in row.items() if v is not None and v != [] and v != {}}
 
@@ -160,6 +161,7 @@ def derived(record):
         today = date.fromisoformat(record.get("as_of"))
     except (TypeError, ValueError):
         today = None
+    ratios.correct_fundamentals(record, today)
     return ratios.derive(record, today)
 
 
@@ -236,6 +238,7 @@ def update(now, index, wide_list, quotes, analyse, ctx, prev, loader, out_dir, l
         if outlook_fn:
             record["outlook"] = outlook_fn(record)
         record["provenance"], record["provenance_ok"] = provenance.build(record, int(now.timestamp()))
+        record["calc"], record["fin"] = derived(record), (1 if ratios.is_financial(record.get("fundamentals")) else None)      # the page's own row of a peer table needs them too
         if lists_fn:
             lists_fn([record])                          # the lists (Oversold, Low debt and so on) the curated stocks get
         shards[shard_of(symbol)][symbol] = record
@@ -243,6 +246,7 @@ def update(now, index, wide_list, quotes, analyse, ctx, prev, loader, out_dir, l
         done += 1
     for record in curated_records:                       # the curated stocks' full records, loaded when one is opened (a carried-over or already slim record never replaces them)
         if not record.get("carried") and not record.get("lite"):
+            record["calc"], record["fin"] = derived(record), (1 if ratios.is_financial(record.get("fundamentals")) else None)
             shards[shard_of(record["symbol"])][record["symbol"]] = record
     for records in shards.values():                      # drop records of stocks that left the list
         for symbol in [s for s in records if s not in kept_symbols]:

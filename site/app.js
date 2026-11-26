@@ -1365,13 +1365,14 @@
   /* Where the price sits: resistance, support and risk level as one small table, with the 52-week range under it. */
   const shortDay = (iso) => (typeof iso === 'string' && iso.length === 10 ? new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : 'unknown date');
   /* A bar from a low to a high with a marker at the price. Nothing is drawn unless low, high and price are all numbers and the high is above the low. */
-  function rangeBar(title, low, high, price, currency, note) {
+  function rangeBar(title, low, high, price, currency) {
     if (!(isNum(low) && isNum(high) && isNum(price) && high > low)) return null;
     const pos = clamp((price - low) / (high - low) * 100, 0, 100);
     return h('div', { class: 'rangebox' },
       h('div', { class: 'rangetop small' }, h('span', { class: 'muted' }, title), h('span', null, `${pos.toFixed(0)}% of the way up`)),
-      h('div', { class: 'rangebar', role: 'img', 'aria-label': `${title}: the price is at ${pos.toFixed(0)} percent of the range from ${money(low, currency)} to ${money(high, currency)}` }, h('i', { style: `left:${pos}%` })),
-      h('div', { class: 'rangeends small' }, h('span', null, money(low, currency)), note ? h('span', { class: 'muted' }, note) : null, h('span', null, money(high, currency))));
+      h('div', { class: 'rangeline small' }, h('span', null, money(low, currency)),
+        h('div', { class: 'rangebar', role: 'img', 'aria-label': `${title}: the price is at ${pos.toFixed(0)} percent of the range from ${money(low, currency)} to ${money(high, currency)}` }, h('i', { style: `left:${pos}%` })),
+        h('span', null, money(high, currency))));
   }
 
   /* Today's range (the newest candle: the day so far while the market is open, else the last session) and the 52-week range. */
@@ -1392,32 +1393,28 @@
       if (!isNum(q) && !isNum(y)) return;
       const main = isNum(q) ? q : y;
       cards.push({ label, value: signed(main, 1), tone: main > 0 ? 'up' : main < 0 ? 'down' : '',
-        text: isNum(q) ? `on the quarter before${isNum(y) ? `; ${signed(y, 1)} on a year earlier` : ''}` : 'on a year earlier' });
+        text: isNum(q) ? (isNum(y) ? `qtr · YoY ${signed(y, 0)}` : 'vs last quarter') : 'vs a year ago', hint: isNum(q) ? `${signed(q, 1)} on the quarter before${isNum(y) ? `; ${signed(y, 1)} on a year earlier` : ''}` : `${signed(y, 1)} on a year earlier` });
     };
-    trend('Revenue', 'revenue'); trend('Operating profit', 'operating_income'); trend('Net profit', 'net_income');
+    trend('Revenue', 'revenue'); trend('Op. profit', 'operating_income'); trend('Net profit', 'net_income');
     const rs = (s.indicators || {}).rs126;
-    if (isNum(rs)) cards.push({ label: 'Against the index', value: signed(rs, 1, ' pts'), tone: rs > 0 ? 'up' : rs < 0 ? 'down' : '', text: `${rs >= 0 ? 'Ahead of' : 'Behind'} the index by ${Math.abs(rs).toFixed(1)} points over 6 months` });
+    if (isNum(rs)) cards.push({ label: 'Vs index', value: signed(rs, 1, ' pts'), tone: rs > 0 ? 'up' : rs < 0 ? 'down' : '', text: '6 months', hint: `${rs >= 0 ? 'Ahead of' : 'Behind'} the index by ${Math.abs(rs).toFixed(1)} percentage points over 6 months` });
     const pe = (s.fundamentals || {}).pe, median = (ruleContext().sectorPE || {})[s.sector];
-    if (isNum(pe) && pe > 0 && median) cards.push({ label: 'P/E against its sector', value: `${(pe / median).toFixed(2)}×`, tone: '', text: `P/E ${pe.toFixed(1)}, sector median ${median.toFixed(1)}` });
+    if (isNum(pe) && pe > 0 && median) cards.push({ label: 'P/E vs sector', value: `${(pe / median).toFixed(2)}×`, tone: '', text: `${pe.toFixed(1)} vs ${median.toFixed(1)}`, hint: `P/E ${pe.toFixed(1)} against a sector median of ${median.toFixed(1)}` });
     if (!cards.length) return null;
     return h('div', { class: 'insightbox' },
-      h('div', { class: 'insights', role: 'list', 'aria-label': 'Latest results at a glance' }, cards.map((c) => h('div', { class: 'insight', role: 'listitem' },
+      h('div', { class: 'insights', role: 'list', 'aria-label': 'Results at a glance' }, cards.map((c) => h('div', { class: 'insight', role: 'listitem', title: c.hint || '' },
         h('span', { class: 'muted small' }, c.label), h('b', { class: c.tone }, c.value), h('span', { class: 'small muted' }, c.text)))),
-      sum.latest_quarter ? h('p', { class: 'muted small', style: 'margin:4px 0 0' }, `Results for the quarter ended ${sum.latest_quarter}. Facts from the reported figures, not a view on the stock.`) : null);
+      sum.latest_quarter ? h('p', { class: 'muted small', style: 'margin:4px 0 0' }, `Quarter to ${quarterDay(sum.latest_quarter)} · reported facts, not a view`) : null);
   }
 
   function priceMap(s) {
     const rows = levelRows(s);
     if (!rows.length || !isNum(s.price)) return null;
-    const all = [...rows, { kind: 'now', label: 'Price now', v: s.price }].sort((a, b) => b.v - a.v);
-    const table = rows.length ? h('table', { class: 'leveltable' },
-      h('thead', null, h('tr', null, h('th', { scope: 'col' }, 'Level'), h('th', { scope: 'col', class: 'num' }, 'Price'), h('th', { scope: 'col', class: 'num' }, 'From price'))),
-      h('tbody', null, all.map((r) => h('tr', { class: `l-${r.kind}` },
-        h('th', { scope: 'row' }, r.label), h('td', { class: 'num' }, money(r.v, s.currency)),
-        h('td', { class: 'num gap' }, r.kind === 'now' ? `as of ${shortDay(s.as_of)}` : signed((r.v / s.price - 1) * 100, 1)))))) : null;
+    const tiles = rows.map((r) => h('div', { class: `ltile l-${r.kind}`, title: `${r.label}: ${r.note}` },
+      h('span', { class: 'small' }, r.label), h('b', null, money(r.v, s.currency)), h('span', { class: 'small muted' }, signed((r.v / s.price - 1) * 100, 1))));
     const help = rows.length ? h('details', { class: 'mapnote small' }, h('summary', null, 'What do these levels mean?'),
       h('p', { class: 'muted', style: 'margin:4px 0 0' }, 'Resistance: rises have stalled here before. Support: falls have paused here before. Risk level: two average daily ranges below the price. They come from fixed rules on past prices and are references, not advice.')) : null;
-    return h('div', { class: 'pmap' }, table, help);
+    return h('div', { class: 'pmap' }, h('div', { class: 'levelstrip', role: 'list', 'aria-label': 'Reference levels' }, tiles), help);
   }
 
   function positionCalculator(s) {
@@ -1647,11 +1644,6 @@
     const lean = sides[0] === sides[1] ? { buy: 'Both views aligned bullish', sell: 'Both views aligned bearish', hold: 'Both views mixed' }[sides[0]] : 'The two views differ';
     const part = (n, k) => (n ? h('i', { class: k, style: `flex:${n}` }) : null);
     return h('div', { class: 'vblock' },
-      (() => {
-        const a = s.short && s.short.label, b = s.long && s.long.label;
-        return a && b && a !== 'N/A' && b !== 'N/A' && side(a) !== side(b)
-          ? h('p', { class: 'muted small', style: 'margin:0 0 6px' }, `The two views point different ways: weeks ${SIDE_WORD[side(a)]}, months to years ${SIDE_WORD[side(b)]}. They measure different time frames, so neither cancels the other.`) : null;
-      })(),
       h('div', { class: 'verdicts' }, verdictCard('Weeks view', s.short), verdictCard('Months-to-years view', s.long)),
       ['short', 'long'].some((hz) => pastTest(s, hz)) ? h('div', { class: 'small muted', style: 'margin:6px 0' }, ['short', 'long'].map((hz) => (pastTest(s, hz) ? h('p', { style: 'margin:2px 0' }, h('b', null, hz === 'short' ? 'Weeks view. ' : 'Months-to-years view. '), pastTest(s, hz)) : null)), h('p', { style: 'margin:2px 0' }, 'Past results do not predict future ones.')) : null,
       checks.length ? h('div', { class: 'vsum' },
@@ -1724,14 +1716,24 @@
     return chips.length ? h('div', { class: 'chips-row' }, chips) : null;
   }
 
+  /* One panel of the page top. On wide screens the panels sit two by two with a heading, and the two panels of a row are the same height; on a phone they
+     stack with no frame. A panel whose parts are all empty is not drawn. */
+  function heroCard(cls, title, ...parts) {
+    const kids = parts.filter(Boolean);
+    return kids.length ? h('section', { class: `hcard ${cls}`, 'aria-label': title }, h('h3', { class: 'hhead' }, title), ...kids) : null;
+  }
+  const quarterDay = (iso) => new Date(Date.parse(iso + 'T00:00:00Z')).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+
   function detailView(s) {
     const bt = s.backtest || {};
     const r = s.risk;
     const hero = h('div', { class: 'hero' },
       h('div', { class: 'herotags chips-row' }, h('span', { class: 'tag' }, 'India'), s.exchange ? h('span', { class: 'tag' }, s.exchange) : null, s.sector ? h('span', { class: 'tag' }, s.sector) : null,
         qualityTag(s), flagTags(s)),
-      verdictBlock(s),
-      rangesBlock(s), insightCards(s), priceMap(s), statsGrid(s), glanceChips(s));
+      heroCard('hverdict', 'Reading and key figures', verdictBlock(s), statsGrid(s)),
+      heroCard('hprice', 'Where the price sits', rangesBlock(s), priceMap(s)),
+      heroCard('hresults', 'Results at a glance', insightCards(s)),
+      glanceChips(s));
 
     const panels = {
       overview: [
@@ -2665,7 +2667,7 @@
       const open = AL_UI.open.has(rule.id);
       const result = open && !deepWaiting(rule) ? Rules.run(rule, allStocks(), ruleContext()) : null;
       return h('div', { class: 'card al-rule' + (rule.on ? '' : ' off') },
-        h('div', { class: 'al-top' }, h('strong', null, rule.name), switchEl(rule.on, 'On', (e) => { rule.on = e.target.checked; saveRules(); if (rule.on) delete AL.matched[rule.id]; checkAlerts(); render(); })),
+        h('div', { class: 'al-top' }, h('strong', null, rule.name), switchEl(rule.on, rule.on ? 'On' : 'Off', (e) => { rule.on = e.target.checked; saveRules(); if (rule.on) delete AL.matched[rule.id]; checkAlerts(); render(); })),
         h('p', { class: 'al-desc' }, Rules.describe(rule)),
         h('p', { class: 'al-count', 'data-rule-count': rule.id }, 'Counting...'),
         h('div', { class: 'al-actions' },
@@ -2717,6 +2719,14 @@
         : h('p', { class: 'muted small' }, 'Nothing yet. Alerts will appear here as they happen.')));
   }
 
+  function setupUpdateNotice() {
+    if (!window.Updater || !(location.protocol === 'https:' || location.hostname === 'localhost')) return;
+    try {         // an optional extra: whatever goes wrong here must never stop the app from starting
+      window.Updater.watch({ serviceWorker: navigator.serviceWorker, document, bar: $('#update'), reload: $('#update-reload'), dismiss: $('#update-dismiss'),
+        reloadPage: () => location.reload(), every: (fn, ms) => setInterval(fn, ms) });
+    } catch (err) { /* no update notice */ }
+  }
+
   /* Theme: follows the device until a person picks Light or Dark; the choice is kept on this device. */
   function setupTheme() {
     const button = $('#theme');
@@ -2763,6 +2773,7 @@
     window.addEventListener('hashchange', openFromHash);
     setupNotifications();
     setupTheme();
+    setupUpdateNotice();
     load(false);
     setInterval(() => { if (!document.hidden) load(false); }, REFRESH_MS);
     setInterval(updateHeader, 60 * 1000);

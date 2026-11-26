@@ -85,18 +85,53 @@ def roce_approx(statements):
     return round(ebit[-1][1] / (capital_equity + capital_debt) * 100, 1)
 
 
-def debt_to_ebitda(fundamentals):
-    debt, ebitda = (fundamentals or {}).get("total_debt"), (fundamentals or {}).get("ebitda")
-    if isinstance(debt, (int, float)) and isinstance(ebitda, (int, float)) and ebitda > 0 and debt >= 0:
-        return round(debt / ebitda, 2)
-    return None
+def currency_ok(record):
+    """True when the statements are in the currency the price is quoted in. Amounts from the statements (cash flow, EBITDA) can only be set against the
+    market cap or enterprise value then: a company that reports in dollars while its shares trade in rupees (Infosys) would give a ratio out by the exchange
+    rate. Yahoo's own EV/EBITDA and free cash flow figures were seen to mix currencies in the same way, so they are not used for ratios."""
+    statement_currency = (record.get("statements") or {}).get("currency")
+    price_currency = record.get("currency") or ("INR" if (record.get("symbol") or "").endswith(".NS") else None)
+    return bool(statement_currency) and statement_currency == price_currency
 
 
-def price_to_fcf(fundamentals):
-    cap, fcf = (fundamentals or {}).get("market_cap"), (fundamentals or {}).get("free_cash_flow")
-    if isinstance(cap, (int, float)) and isinstance(fcf, (int, float)) and fcf > 0 and cap > 0:
-        return round(cap / fcf, 1)
-    return None
+def _latest(statements, name, today=None):
+    rows = _rows(statements, name)
+    if not rows or (today and (today - rows[-1][0]).days > STALE_DAYS):
+        return None
+    return rows[-1]
+
+
+def debt_to_ebitda(statements, today=None):
+    """Total debt over EBITDA of the same fiscal year, both from the annual statements (so in one currency, whichever it is)."""
+    ebitda = _latest(statements, "ebitda", today)
+    if not ebitda or ebitda[1] <= 0:
+        return None
+    debt = _at(_rows(statements, "total_debt"), ebitda[0])
+    return round(debt / ebitda[1], 2) if debt is not None and debt >= 0 else None
+
+
+def ev_to_ebitda(record, today=None):
+    """Enterprise value over the newest annual EBITDA. Only when the statements are in the price currency."""
+    ebitda, ev = _latest(record.get("statements"), "ebitda", today), (record.get("fundamentals") or {}).get("enterprise_value")
+    if not currency_ok(record) or not ebitda or ebitda[1] <= 0 or not isinstance(ev, (int, float)) or ev <= 0:
+        return None
+    return round(ev / ebitda[1], 1)
+
+
+def price_to_fcf(record, today=None):
+    """Market cap over the newest annual free cash flow, when that is positive and in the price currency."""
+    fcf, cap = _latest(record.get("statements"), "free_cash_flow", today), (record.get("fundamentals") or {}).get("market_cap")
+    if not currency_ok(record) or not fcf or fcf[1] <= 0 or not isinstance(cap, (int, float)) or cap <= 0:
+        return None
+    return round(cap / fcf[1], 1)
+
+
+def fcf_crore(record, today=None):
+    """The newest annual free cash flow in rupees crore (any sign), for NSE stocks whose statements are in rupees."""
+    fcf = _latest(record.get("statements"), "free_cash_flow", today)
+    if not currency_ok(record) or not fcf or not (record.get("symbol") or "").endswith(".NS"):
+        return None
+    return round(fcf[1] / 1e7, 1)
 
 
 def is_financial(fundamentals):
@@ -124,6 +159,19 @@ def relative_strength(dates, closes, bench_by_date, sessions=126):
     return round(((closes[-1] / closes[-(sessions + 1)] - 1) - (end / start - 1)) * 100, 1)
 
 
+def correct_fundamentals(record, today=None):
+    """Replace Yahoo's EV/EBITDA, which mixes currencies for some companies (Infosys 934, HCL Tech 1333), with the one worked out here from the statements, or
+    remove it when that cannot be done. Changes the record's own fundamentals; running it again changes nothing."""
+    fundamentals = record.get("fundamentals")
+    if not isinstance(fundamentals, dict) or "ev_ebitda" not in fundamentals or not (record.get("statements") or {}).get("annual"):
+        return                                       # without statements there is nothing to check Yahoo's figure against, so it stays
+    own = ev_to_ebitda(record, today)
+    if own is None:
+        del fundamentals["ev_ebitda"]
+    else:
+        fundamentals["ev_ebitda"] = own
+
+
 def derive(record, today=None):
     """{name: number} of the figures above for one record (fundamentals and statements attached). Names with no value are left out."""
     fundamentals, statements = record.get("fundamentals") or {}, record.get("statements") or {}
@@ -132,6 +180,7 @@ def derive(record, today=None):
     values = {
         "rev_cagr3": cagr(revenue, 3, today), "profit_cagr3": cagr(profit, 3, today), "eps_cagr3": cagr(eps, 3, today),
         "profit_up_years": profit_up_years(profit), "ocf_to_profit": ocf_to_profit(statements), "roce": roce_approx(statements),
-        "op_growth": yoy.get("operating_income"), "debt_to_ebitda": debt_to_ebitda(fundamentals), "price_to_fcf": price_to_fcf(fundamentals),
+        "op_growth": yoy.get("operating_income"), "debt_to_ebitda": debt_to_ebitda(statements, today), "price_to_fcf": price_to_fcf(record, today),
+        "ev_ebitda": ev_to_ebitda(record, today), "fcf_cr": fcf_crore(record, today),
     }
     return {k: v for k, v in values.items() if isinstance(v, (int, float)) and not isinstance(v, bool)}

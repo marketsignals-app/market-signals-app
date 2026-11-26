@@ -18,7 +18,6 @@
   const risk = (s) => s.risk || {};
   const pct = (x) => (num(x) !== null ? x * 100 : null);
   const positive = (x) => (num(x) !== null && x > 0 ? x : null);
-  const crore = (s, x) => (num(x) !== null && /\.NS$/.test(s.symbol || '') ? x / 1e7 : null);
 
   /* deep: the value comes from the indicator file of the other stocks, which the app loads on demand. */
   const NUMBERS = {
@@ -49,12 +48,12 @@
     op_growth: ['Operating profit, change on a year earlier (%)', 'Growth', (s) => num(calc(s).op_growth), true, 1],
     profit_up_years: ['Years net profit rose, of the last 3', 'Growth', (s) => num(calc(s).profit_up_years), true],
     ocf_profit: ['Operating cash flow over net profit (times)', 'Cash and debt', (s) => num(calc(s).ocf_to_profit), true, 1],
-    fcf_cr: ['Free cash flow (Rs crore)', 'Cash and debt', (s) => crore(s, fund(s).free_cash_flow), true, 1],
+    fcf_cr: ['Free cash flow, latest year (Rs crore)', 'Cash and debt', (s) => num(calc(s).fcf_cr), true, 1],
     debt_equity: ['Debt to equity (times)', 'Cash and debt', (s) => num(fund(s).debt_to_equity), true, 1],
     debt_ebitda: ['Total debt over EBITDA (times)', 'Cash and debt', (s) => num(calc(s).debt_to_ebitda), true, 1],
     current_ratio: ['Current ratio (times)', 'Cash and debt', (s) => num(fund(s).current_ratio), true, 1],
     peg: ['PEG ratio', 'Value', (s) => positive(fund(s).peg), true],
-    ev_ebitda: ['EV / EBITDA (times)', 'Value', (s) => positive(fund(s).ev_ebitda), true, 1],
+    ev_ebitda: ['EV / EBITDA, latest year (times)', 'Value', (s) => positive(calc(s).ev_ebitda), true, 1],
     price_fcf: ['Price to free cash flow (times)', 'Value', (s) => num(calc(s).price_to_fcf), true, 1],
     earn_yield: ['Earnings yield, 100 / P/E (%)', 'Value', (s) => (positive(fund(s).pe) !== null ? 100 / fund(s).pe : null)],
     pe_vs_sector: ['P/E against the sector median (times)', 'Value', (s, ctx) => {

@@ -113,13 +113,14 @@ test('a code inside a message with a link before it is still found', () => {
 });
 
 test('quality, growth, cash and risk fields read the figures in the right units', () => {
-  const s = stock('A.NS', { fundamentals: { roe: 0.183, operating_margin: 0.25, debt_to_equity: 0.4, free_cash_flow: 5e9, pe: 20, ev_ebitda: 11, peg: -1 },
-    calc: { rev_cagr3: 12.5, profit_up_years: 3, debt_to_ebitda: 1.2 }, risk: { beta: 1.1, max_drawdown: -0.32 }, indicators: { sma50: 110, sma200: 100, adx: 31, rs126: 8.5 } });
+  const s = stock('A.NS', { fundamentals: { roe: 0.183, operating_margin: 0.25, debt_to_equity: 0.4, pe: 20, peg: -1 },
+    calc: { rev_cagr3: 12.5, profit_up_years: 3, debt_to_ebitda: 1.2, fcf_cr: 500, ev_ebitda: 11 }, risk: { beta: 1.1, max_drawdown: -0.32 }, indicators: { sma50: 110, sma200: 100, adx: 31, rs126: 8.5 } });
   const t = (field, op, value) => R.test({ field, op, value }, s, {});
   assert.equal(t('roe', '>', 18), true, 'ROE is a fraction in the data and a percent in the rule');
   assert.equal(t('roe', '>', 19), false);
   assert.equal(t('op_margin', '>', 24), true);
-  assert.equal(t('fcf_cr', '>', 499), true, '5e9 rupees is 500 crore');
+  assert.equal(t('fcf_cr', '>', 499), true);
+  assert.equal(t('ev_ebitda', '<', 12), true);
   assert.equal(t('fcf_cr', '>', 501), false);
   assert.equal(t('worst_fall', '>', 30), true, 'a fall of 32% is 32, so "more than 30" matches');
   assert.equal(t('beta', '<', 1.2), true);
@@ -130,7 +131,7 @@ test('quality, growth, cash and risk fields read the figures in the right units'
   assert.equal(t('adx', '>', 25), true);
   assert.equal(t('rs126', '>', 5), true);
   assert.equal(R.test({ field: 'peg', op: '>', value: -5 }, s, {}), null, 'a negative PEG is no figure at all');
-  assert.equal(R.test({ field: 'fcf_cr', op: '>', value: 1 }, { ...s, symbol: 'AAPL' }, {}), null, 'crore only means something for NSE stocks');
+  assert.equal(R.test({ field: 'ev_ebitda', op: '>', value: 1 }, { ...s, calc: {} }, {}), null, 'no figure from the engine means no figure, never one taken from Yahoo');
 });
 
 test('a bank is not asked about debt, cash flow or margins, and is counted as not applicable', () => {

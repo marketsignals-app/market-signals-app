@@ -52,11 +52,38 @@ class CashAndDebtTests(unittest.TestCase):
         self.assertEqual(ratios.roce_approx(statements(a=annual("operating_income", [20]), b=annual("equity", [100]))), 20.0, "no debt figure means no debt")
         self.assertIsNone(ratios.roce_approx(statements(a=annual("operating_income", [20]), b=annual("equity", [-30]), c=annual("total_debt", [10]))))
 
-    def test_debt_and_price_ratios_need_positive_denominators(self):
-        self.assertEqual(ratios.debt_to_ebitda({"total_debt": 300.0, "ebitda": 100.0}), 3.0)
-        self.assertIsNone(ratios.debt_to_ebitda({"total_debt": 300.0, "ebitda": -5.0}))
-        self.assertEqual(ratios.price_to_fcf({"market_cap": 1000.0, "free_cash_flow": 50.0}), 20.0)
-        self.assertIsNone(ratios.price_to_fcf({"market_cap": 1000.0, "free_cash_flow": -50.0}))
+    def test_debt_over_ebitda_uses_the_same_year_of_the_statements(self):
+        st = statements(a=annual("total_debt", [250, 300]), b=annual("ebitda", [90, 100]))
+        self.assertEqual(ratios.debt_to_ebitda(st), 3.0)
+        self.assertIsNone(ratios.debt_to_ebitda(statements(a=annual("total_debt", [300]), b=annual("ebitda", [-5]))))
+        self.assertIsNone(ratios.debt_to_ebitda(statements(a=annual("total_debt", [300], end="2023-03-31"), b=annual("ebitda", [100]))), "different years")
+
+    def test_amount_ratios_need_the_statements_in_the_price_currency(self):
+        rupee = {"symbol": "A.NS", "fundamentals": {"market_cap": 1000.0, "enterprise_value": 1200.0},
+                 "statements": {"currency": "INR", "annual": {**annual("ebitda", [60, 100]), **annual("free_cash_flow", [20, 50])}}}
+        self.assertEqual(ratios.ev_to_ebitda(rupee), 12.0)
+        self.assertEqual(ratios.price_to_fcf(rupee), 20.0)
+        self.assertEqual(ratios.fcf_crore({**rupee, "statements": {"currency": "INR", "annual": annual("free_cash_flow", [5e9])}}), 500.0)
+        dollar = {**rupee, "statements": {**rupee["statements"], "currency": "USD"}}
+        for figure in (ratios.ev_to_ebitda(dollar), ratios.price_to_fcf(dollar), ratios.fcf_crore(dollar)):
+            self.assertIsNone(figure, "a company reporting in dollars while its shares trade in rupees would give a ratio out by the exchange rate")
+        self.assertIsNone(ratios.ev_to_ebitda({**rupee, "statements": {"annual": rupee["statements"]["annual"]}}), "no statement currency means no ratio")
+
+    def test_yahoos_mixed_currency_ev_ebitda_is_replaced_or_removed(self):
+        base = {"symbol": "A.NS", "currency": "INR", "fundamentals": {"enterprise_value": 1200.0, "ev_ebitda": 933.8}, "statements": {"currency": "INR", "annual": annual("ebitda", [100])}}
+        ratios.correct_fundamentals(base)
+        self.assertEqual(base["fundamentals"]["ev_ebitda"], 12.0)
+        ratios.correct_fundamentals(base)
+        self.assertEqual(base["fundamentals"]["ev_ebitda"], 12.0, "running it again changes nothing")
+        mixed = {**base, "fundamentals": {"enterprise_value": 1200.0, "ev_ebitda": 933.8}, "statements": {"currency": "USD", "annual": annual("ebitda", [100])}}
+        ratios.correct_fundamentals(mixed)
+        self.assertNotIn("ev_ebitda", mixed["fundamentals"])
+        ratios.correct_fundamentals({"symbol": "B.NS"})              # nothing to correct, nothing breaks
+
+    def test_no_ratio_from_a_loss_or_a_missing_figure(self):
+        loss = {"symbol": "A.NS", "fundamentals": {"market_cap": 1000.0, "enterprise_value": 1200.0}, "statements": {"currency": "INR", "annual": {**annual("ebitda", [-10]), **annual("free_cash_flow", [-5])}}}
+        self.assertIsNone(ratios.ev_to_ebitda(loss))
+        self.assertIsNone(ratios.price_to_fcf(loss))
         self.assertIsNone(ratios.price_to_fcf({}))
 
     def test_a_financial_company_is_flagged(self):
@@ -88,10 +115,11 @@ class RelativeStrengthTests(unittest.TestCase):
 
 class DeriveTests(unittest.TestCase):
     def test_derive_keeps_only_the_figures_that_exist(self):
-        record = {"symbol": "A.NS", "fundamentals": {"total_debt": 200.0, "ebitda": 100.0, "market_cap": 900.0, "free_cash_flow": 30.0},
-                  "statements": {"annual": {**annual("revenue", [100, 110, 121, 133.1]), **annual("net_income", [10, 12, 14, 16])}, "summary": {"yoy": {"operating_income": 12.5}}}}
+        record = {"symbol": "A.NS", "fundamentals": {"market_cap": 900.0, "enterprise_value": 1000.0},
+                  "statements": {"currency": "INR", "annual": {**annual("revenue", [100, 110, 121, 133.1]), **annual("net_income", [10, 12, 14, 16]), **annual("total_debt", [150, 150, 180, 200]),
+                                                               **annual("ebitda", [80, 90, 95, 100]), **annual("free_cash_flow", [20, 25, 28, 30])}, "summary": {"yoy": {"operating_income": 12.5}}}}
         got = ratios.derive(record)
-        self.assertEqual(got, {"rev_cagr3": 10.0, "profit_cagr3": 17.0, "profit_up_years": 3, "op_growth": 12.5, "debt_to_ebitda": 2.0, "price_to_fcf": 30.0})
+        self.assertEqual(got, {"rev_cagr3": 10.0, "profit_cagr3": 17.0, "profit_up_years": 3, "op_growth": 12.5, "debt_to_ebitda": 2.0, "price_to_fcf": 30.0, "ev_ebitda": 10.0, "fcf_cr": 0.0})
         self.assertNotIn("rev_cagr5", got)
         self.assertEqual(ratios.derive({}), {})
 
@@ -99,12 +127,13 @@ class DeriveTests(unittest.TestCase):
 class ShippedTests(unittest.TestCase):
     record = {"symbol": "A.NS", "as_of": "2026-11-20", "risk": {"beta": 1.23456, "max_drawdown": -0.31234, "annual_vol": 0.3},
               "fundamentals": {"sector": "Financial Services", "roe": 0.183456789, "ebitda": 5123456789.4, "gross_margin": 0.4, "total_debt": 9e9},
-              "statements": {"annual": {**annual("revenue", [100, 110, 121, 133.1], end="2025-03-31")}}}
+              "statements": {"annual": {**annual("revenue", [100, 110, 121, 133.1], end="2025-03-31"), **annual("total_debt", [150, 150, 180, 200], end="2025-03-31"),
+                                        **annual("ebitda", [80, 90, 95, 100], end="2025-03-31")}}}
 
     def test_the_extra_row_carries_risk_worked_out_figures_and_the_financial_flag(self):
         row = catalog.extra_row(self.record)
         self.assertEqual(row["risk"], {"beta": 1.235, "max_drawdown": -0.312})
-        self.assertEqual(row["calc"], {"rev_cagr3": 10.0, "debt_to_ebitda": 1.76})
+        self.assertEqual(row["calc"], {"rev_cagr3": 10.0, "debt_to_ebitda": 2.0})
         self.assertEqual(row["fin"], 1)
         self.assertEqual(row["fund"], {"roe": 0.1835, "ebitda": 5123456789, "gross_margin": 0.4}, "ratios to four places, amounts whole, and the debt amount is not shipped")
 
@@ -116,7 +145,7 @@ class ShippedTests(unittest.TestCase):
 
     def test_the_slim_record_keeps_the_figures_because_it_drops_the_statements(self):
         lite = catalog.lite({**self.record, "statements": {"annual": self.record["statements"]["annual"], "quarterly": {}, "summary": {}}})
-        self.assertEqual(lite["calc"], {"rev_cagr3": 10.0, "debt_to_ebitda": 1.76})
+        self.assertEqual(lite["calc"], {"rev_cagr3": 10.0, "debt_to_ebitda": 2.0})
         self.assertEqual(lite["fin"], 1)
         self.assertNotIn("annual", lite["statements"])
 
