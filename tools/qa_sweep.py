@@ -11,7 +11,7 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-LIMITS = {"data.json": 1600 * 1024, "index.json": 1800 * 1024, "index_extra.json": 1600 * 1024, "detail": 700 * 1024}   # a shard holds ~70 stocks once the whole list is analysed; Pages serves it gzipped, one shard per stock page
+LIMITS = {"data.json": 1600 * 1024, "index.json": 1800 * 1024, "index_extra.json": 2000 * 1024, "detail": 700 * 1024}   # a shard holds ~70 stocks once the whole list is analysed; Pages serves it gzipped, one shard per stock page
 HIGH_DIVIDEND = {"IN": 0.03, "US": 0.025}
 
 

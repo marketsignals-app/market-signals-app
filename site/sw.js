@@ -1,4 +1,4 @@
-const CACHE = 'signals-v49';
+const CACHE = 'signals-v50';
 const SHELL = ['./', 'index.html', 'advisory.html', 'style.css', 'app.js', 'ipo.js', 'rules.js', 'icon.svg', 'manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {

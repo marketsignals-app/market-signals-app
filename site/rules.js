@@ -14,6 +14,11 @@
     return new Set(sides).size === 1 ? sides[0] : 'mixed';
   };
   const gap = (a, b) => (num(a) !== null && num(b) !== null && b !== 0 ? ((a - b) / b) * 100 : null);
+  const calc = (s) => s.calc || {};
+  const risk = (s) => s.risk || {};
+  const pct = (x) => (num(x) !== null ? x * 100 : null);
+  const positive = (x) => (num(x) !== null && x > 0 ? x : null);
+  const crore = (s, x) => (num(x) !== null && /\.NS$/.test(s.symbol || '') ? x / 1e7 : null);
 
   /* deep: the value comes from the indicator file of the other stocks, which the app loads on demand. */
   const NUMBERS = {
@@ -33,6 +38,34 @@
     vs_sma50: ['Price above 50-day average (%)', 'Technical', (s) => gap(s.price, ind(s).sma50), true],
     vs_sma200: ['Price above 200-day average (%)', 'Technical', (s) => gap(s.price, ind(s).sma200), true],
     momentum: ['6-month return (%)', 'Technical', (s) => (num(ind(s).momentum126) !== null ? ind(s).momentum126 * 100 : null), true],
+    roe: ['Return on equity, ROE (%)', 'Quality', (s) => pct(fund(s).roe), true],
+    roa: ['Return on assets (%)', 'Quality', (s) => pct(fund(s).roa), true],
+    op_margin: ['Operating margin (%)', 'Quality', (s) => pct(fund(s).operating_margin), true, 1],
+    gross_margin: ['Gross margin (%)', 'Quality', (s) => pct(fund(s).gross_margin), true, 1],
+    roce: ['ROCE, approximate: operating income over equity plus debt (%)', 'Quality', (s) => num(calc(s).roce), true, 1],
+    rev_cagr3: ['Revenue growth a year, 3-year average (%)', 'Growth', (s) => num(calc(s).rev_cagr3), true],
+    profit_cagr3: ['Net profit growth a year, 3-year average (%)', 'Growth', (s) => num(calc(s).profit_cagr3), true],
+    eps_cagr3: ['EPS growth a year, 3-year average (%)', 'Growth', (s) => num(calc(s).eps_cagr3), true],
+    op_growth: ['Operating profit, change on a year earlier (%)', 'Growth', (s) => num(calc(s).op_growth), true, 1],
+    profit_up_years: ['Years net profit rose, of the last 3', 'Growth', (s) => num(calc(s).profit_up_years), true],
+    ocf_profit: ['Operating cash flow over net profit (times)', 'Cash and debt', (s) => num(calc(s).ocf_to_profit), true, 1],
+    fcf_cr: ['Free cash flow (Rs crore)', 'Cash and debt', (s) => crore(s, fund(s).free_cash_flow), true, 1],
+    debt_equity: ['Debt to equity (times)', 'Cash and debt', (s) => num(fund(s).debt_to_equity), true, 1],
+    debt_ebitda: ['Total debt over EBITDA (times)', 'Cash and debt', (s) => num(calc(s).debt_to_ebitda), true, 1],
+    current_ratio: ['Current ratio (times)', 'Cash and debt', (s) => num(fund(s).current_ratio), true, 1],
+    peg: ['PEG ratio', 'Value', (s) => positive(fund(s).peg), true],
+    ev_ebitda: ['EV / EBITDA (times)', 'Value', (s) => positive(fund(s).ev_ebitda), true, 1],
+    price_fcf: ['Price to free cash flow (times)', 'Value', (s) => num(calc(s).price_to_fcf), true, 1],
+    earn_yield: ['Earnings yield, 100 / P/E (%)', 'Value', (s) => (positive(fund(s).pe) !== null ? 100 / fund(s).pe : null)],
+    pe_vs_sector: ['P/E against the sector median (times)', 'Value', (s, ctx) => {
+      const median = ctx && ctx.sectorPE && ctx.sectorPE[s.sector];
+      return positive(fund(s).pe) !== null && median ? fund(s).pe / median : null;
+    }, false, 2],
+    sma_cross: ['50-day average above 200-day (%)', 'Technical', (s) => gap(ind(s).sma50, ind(s).sma200), true],
+    adx: ['ADX, trend strength (14 days)', 'Technical', (s) => num(ind(s).adx), true],
+    rs126: ['Six-month return minus the index (points)', 'Technical', (s) => num(ind(s).rs126), true],
+    beta: ['Beta against the index', 'Risk', (s) => num(risk(s).beta), true],
+    worst_fall: ['Worst fall in the last year (%)', 'Risk', (s) => (num(risk(s).max_drawdown) !== null ? -risk(s).max_drawdown * 100 : null), true],
     swing: ['Daily swing, ATR as % of price', 'Technical', (s) => (num(ind(s).atr) !== null && num(s.price) ? (ind(s).atr / s.price) * 100 : null), true],
   };
   const SIDES = [['bullish', 'Aligned bullish'], ['mixed', 'Mixed'], ['bearish', 'Aligned bearish']];
@@ -53,17 +86,18 @@
 
   function fields() {
     return [
-      ...Object.entries(NUMBERS).map(([key, v]) => ({ key, label: v[0], group: v[1], type: 'num', deep: !!v[3], get: v[2] })),
+      ...Object.entries(NUMBERS).map(([key, v]) => ({ key, label: v[0], group: v[1], type: 'num', deep: !!v[3], nf: !!v[4], get: v[2] })),
       ...Object.entries(ENUMS).map(([key, v]) => ({ key, label: v[0], group: v[1], type: 'enum', options: v[2], deep: !!v[4], get: v[3] })),
     ];
   }
   const FIELD_MAP = Object.fromEntries(fields().map((f) => [f.key, f]));
 
   /* One condition against one stock. Returns true, false, or null when the stock has no value for the field. */
-  function test(cond, stock) {
+  function test(cond, stock, ctx) {
     const f = FIELD_MAP[cond.field];
     if (!f) return null;
-    const v = f.get(stock);
+    if (f.nf && stock.fin) return null;                    // debt, cash flow and margins mean something else for a bank or lender: not applicable
+    const v = f.get(stock, ctx);
     if (v === null || v === undefined) return null;
     if (f.type === 'num') return cond.op === '>' ? v > cond.value : v < cond.value;
     return cond.op === 'not' ? v !== cond.value : v === cond.value;
@@ -78,18 +112,39 @@
     return false;
   }
 
-  /* The stocks that match a rule right now, with how many were left out for lacking a value the rule needs. */
+  /* The stocks that match a rule right now, and how many were left out: noData lack a value the rule needs, notApplicable are banks and lenders
+     asked about debt, cash flow or margins (which do not mean the same for them). */
   function run(rule, stocks, ctx) {
     const matches = [];
-    let noData = 0;
+    let noData = 0, notApplicable = 0;
     for (const s of stocks) {
       if (!inScope(rule.scope, s, ctx || {})) continue;
-      const results = rule.conds.map((c) => test(c, s));
+      const results = rule.conds.map((c) => test(c, s, ctx || {}));
       const hit = rule.mode === 'any' ? results.some((r) => r === true) : results.every((r) => r === true);
-      if (hit) matches.push(s.symbol);
-      else if (results.some((r) => r === null) && (rule.mode === 'any' ? !results.some((r) => r === true) : !results.some((r) => r === false))) noData += 1;
+      if (hit) { matches.push(s.symbol); continue; }
+      const undecided = rule.mode === 'any' ? !results.some((r) => r === true) : !results.some((r) => r === false);
+      if (!undecided || !results.some((r) => r === null)) continue;
+      if (s.fin && rule.conds.some((c, k) => results[k] === null && (FIELD_MAP[c.field] || {}).nf)) notApplicable += 1;
+      else noData += 1;
     }
-    return { matches, noData };
+    return { matches, noData, notApplicable };
+  }
+
+  /* Median P/E of each sector with at least four stocks that have a positive P/E (the main list only: the other stocks carry no sector). */
+  function sectorMedians(stocks) {
+    const by = {};
+    for (const s of stocks) {
+      const pe = num(fund(s).pe);
+      if (s.sector && s.sector !== 'Other' && pe !== null && pe > 0) (by[s.sector] = by[s.sector] || []).push(pe);
+    }
+    const out = {};
+    for (const [sector, list] of Object.entries(by)) {
+      if (list.length < 4) continue;
+      list.sort((a, b) => a - b);
+      const mid = list.length >> 1;
+      out[sector] = list.length % 2 ? list[mid] : (list[mid - 1] + list[mid]) / 2;
+    }
+    return out;
   }
 
   const needsDeep = (rule) => rule.conds.some((c) => (FIELD_MAP[c.field] || {}).deep);
@@ -225,7 +280,7 @@
     } catch (e) { return null; }
   }
 
-  const api = { NUMBER_OPS, ENUM_OPS, MAX_CONDITIONS, MAX_RULES, TYPES, fields, test, inScope, run, needsDeep, clean, describe, newMatches, defaultPrefs, typeAlerts, rangeAlerts, sideOf, packSettings, unpackSettings };
+  const api = { NUMBER_OPS, ENUM_OPS, MAX_CONDITIONS, MAX_RULES, TYPES, fields, test, inScope, run, needsDeep, clean, describe, newMatches, defaultPrefs, typeAlerts, rangeAlerts, sideOf, packSettings, unpackSettings, sectorMedians };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Rules = api;
 }(typeof window !== 'undefined' ? window : globalThis));

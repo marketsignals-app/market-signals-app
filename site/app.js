@@ -152,7 +152,10 @@
   const saveRules = () => store.set('alertRules', AL.rules);
   const savePrefs = () => store.set('alertPrefs', AL.prefs);
   const allStocks = () => S.data.stocks.concat(S.others);
-  const ruleContext = () => ({ watch: S.watch, lists: S.lists });
+  const ruleContext = () => {
+    if (!AL.medians || AL.mediansAt !== S.loadedAt) { AL.medians = Rules.sectorMedians(S.data.stocks); AL.mediansAt = S.loadedAt; }
+    return { watch: S.watch, lists: S.lists, sectorPE: AL.medians };
+  };
   const nameOf = (symbol) => { const x = allStocks().find((r) => r.symbol === symbol); return x ? x.name : symbol; };
 
   function emitAlerts(items) {
@@ -282,6 +285,7 @@
         row.indicators = { ...row.indicators, ...(e.ind || {}) };
         row.pressure = e.pressure ? { label: e.pressure } : null;
         row.patterns = (e.patterns || []).map(([name, bias]) => ({ name, bias }));
+        row.risk = e.risk || null; row.calc = e.calc || null; row.fin = e.fin || null;
         row.techLoaded = true;
       }
       S.extra = 'ready';
@@ -2527,7 +2531,8 @@
   function countText(rule) {
     const r = countFor(rule);
     if (!r) return 'Counting...';
-    return `${r.matches.length} stocks match now` + (r.noData ? ` (${r.noData} could not be checked: no data for this field)` : '');
+    const left = [r.noData ? `${r.noData} could not be checked for lack of data` : '', r.notApplicable ? `${r.notApplicable} banks and lenders skipped: this figure does not apply to them` : ''].filter(Boolean);
+    return `${r.matches.length} stocks match now` + (left.length ? ` (${left.join('; ')})` : '');
   }
   function updateAlertCounts() {
     for (const el of document.querySelectorAll('[data-rule-count]')) {
@@ -2631,7 +2636,7 @@
         h('p', { class: 'muted small' }, 'Alerts are checked on this device each time the data refreshes (every 5 to 10 minutes) while the app is open. Your watchlist, switches and rules stay on this device and are never sent anywhere. For alerts when the app is closed, join the Telegram channel.'),
         h('p', { class: 'muted small' }, S.notify ? 'Phone popups are on. Use the Alerts button at the top to turn them off.' : 'Phone popups are off, so alerts show here and as a message in the app. Use the Alerts button at the top to allow popups.')),
 
-      alSection('My rules', `Checked against ${listNote}. A rule alerts when a stock newly starts to match.`),
+      alSection('My rules', `Checked against ${listNote}. A rule alerts when a stock newly starts to match. Figures such as RSI, margins, growth, debt and beta exist only for stocks analysed in depth; the rest are counted as "could not be checked", never guessed.`),
       rules.length || AL_UI.draft ? rules : h('p', { class: 'muted small' }, 'No rules yet. A rule could be "RSI below 30 and price above the 200-day average".'),
       AL_UI.draft ? ruleForm() : h('button', { type: 'button', class: 'btn', onclick: () => { AL_UI.draft = { name: 'My rule', mode: 'all', scope: { kind: 'ALL' }, conds: [blankCond('change_pct')] }; render(); } }, '+ New rule'),
 

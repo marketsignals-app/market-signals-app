@@ -15,7 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-from . import digest, event_news, events, market as market_view, verify
+from . import digest, event_news, events, market as market_view, ratios, verify
 from . import actions, actions_run, alert_memory, digest_feeds, feed_items, feed_run, feeds, ledger_git, manifest, ai_sentiment, catalog, data_learning, evidence, learning, news_ai, news_intel, news_sources, nse_live, sentiment, provenance, statements, universe_sync, alerts, backtest, costs, deals_live, sessions, wide, discover, membership as index_membership, official, dividends, exchange, fetch, fundamentals, ipo_gmp, ledger, news, patterns, risk, signals, tracking
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -310,6 +310,9 @@ def analyse(entry, ctx):
         record["indicators"] = {k: r(ind[k][i]) for k in
                                 ("rsi", "macd_hist", "sma20", "sma50", "sma200", "atr", "vwap20", "vol30",
                                  "cmf20", "upvol20", "momentum126", "hi252", "lo252")}
+        trend = market_view.adx(bars["h"], bars["l"], close)                   # trend strength from completed candles, 14 sessions
+        record["indicators"]["adx"] = r(trend[0]) if trend else None
+        record["indicators"]["rs126"] = ratios.relative_strength(bars["d"], close, ctx["bench"].get(market))        # six-month return minus the index's, in points
     if n > 60:
         record["risk"] = scrub(risk.risk_stats(close, dict(zip(bars["d"], close)), ctx["bench"].get(market)))
     member_from = index_membership.lookup(ctx.get("membership"), market, symbol)

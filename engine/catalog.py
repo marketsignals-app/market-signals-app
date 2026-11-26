@@ -14,10 +14,10 @@ A stock whose history is too short to analyse is retried after RETRY_HOURS; unti
 import json
 import zlib
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
-from . import dividends, evidence, fundamentals, provenance, statements
+from . import dividends, evidence, fundamentals, provenance, ratios, statements
 
 SHARDS = 64
 PER_RUN = 60
@@ -62,7 +62,7 @@ def lite(record):
             "spark": (record.get("spark") or [])[-2:],
             "news": {"fresh": news.get("fresh", []), "items": [], "error": news.get("error")},
             "backtest": {k: {"beats_buy_hold_oos": v.get("beats_buy_hold_oos")} for k, v in (record.get("backtest") or {}).items() if isinstance(v, dict)},
-            "lite": True, "shard": shard_of(record["symbol"])}
+            "calc": derived(record), "fin": 1 if ratios.is_financial(record.get("fundamentals")) else None, "lite": True, "shard": shard_of(record["symbol"])}
 
 
 def shard_of(symbol):
@@ -110,8 +110,8 @@ def _round(value, digits):
 
 
 FUND_KEYS = ("roe", "roa", "debt_to_equity", "profit_margin", "operating_margin", "ebitda_margin", "revenue_growth", "earnings_growth", "payout_ratio",
-             "ebitda", "ev_ebitda", "ev_revenue", "price_to_sales", "peg", "free_cash_flow", "current_ratio", "revenue")
-TECH_KEYS = ("rsi", "macd_hist", "sma20", "sma50", "sma200", "atr", "momentum126")      # what the table's technical filters need
+             "ebitda", "ev_ebitda", "ev_revenue", "price_to_sales", "peg", "free_cash_flow", "current_ratio", "revenue", "gross_margin")
+TECH_KEYS = ("rsi", "macd_hist", "sma20", "sma50", "sma200", "atr", "momentum126", "adx", "rs126")      # what the table's technical filters need
 NEAR = 0.05          # the same 5% as the "Near 52-week high / low" lists of the curated stocks
 
 
@@ -134,14 +134,33 @@ def quote_lists(q):
     return lists
 
 
+def _compact(value):
+    """A ratio to four places and a large amount to a whole number: the file holds a few thousand stocks and Yahoo's long fractions only add weight."""
+    return round(value) if abs(value) >= 1000 else round(value, 4)
+
+
 def extra_row(record):
     """What the table needs only for its technical filters and its Valuation, Dividend, Technical and Risk column views: the stock's indicator values, pattern
     names, pressure and fundamentals. They are in index_extra.json, which the page fetches only when one of those is used, so the start-up file stays small."""
     row = {"ind": {k: _round(v, 3) for k, v in ((record or {}).get("indicators") or {}).items() if k in TECH_KEYS and isinstance(v, (int, float))},
            "pressure": ((record or {}).get("pressure") or {}).get("label"),
            "patterns": [[p["name"], p.get("bias")] for p in (record or {}).get("patterns") or [] if isinstance(p, dict) and p.get("name")],
-           "fund": {k: v for k, v in ((record or {}).get("fundamentals") or {}).items() if k in FUND_KEYS and isinstance(v, (int, float))}}
+           "fund": {k: _compact(v) for k, v in ((record or {}).get("fundamentals") or {}).items() if k in FUND_KEYS and isinstance(v, (int, float))}}
+    if record:
+        risk = record.get("risk") or {}
+        row["risk"] = {k: _round(risk.get(k), 3) for k in ("beta", "max_drawdown") if isinstance(risk.get(k), (int, float))}
+        row["calc"] = derived(record)
+        row["fin"] = 1 if ratios.is_financial(record.get("fundamentals")) else None
     return {k: v for k, v in row.items() if v is not None and v != [] and v != {}}
+
+
+def derived(record):
+    """The worked-out figures of ratios.py for one record, dated by the record's own last price day."""
+    try:
+        today = date.fromisoformat(record.get("as_of"))
+    except (TypeError, ValueError):
+        today = None
+    return ratios.derive(record, today)
 
 
 def index_row(stock, q, entry, record):
