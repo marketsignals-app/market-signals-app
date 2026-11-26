@@ -1364,28 +1364,60 @@
 
   /* Where the price sits: resistance, support and risk level as one small table, with the 52-week range under it. */
   const shortDay = (iso) => (typeof iso === 'string' && iso.length === 10 ? new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : 'unknown date');
+  /* A bar from a low to a high with a marker at the price. Nothing is drawn unless low, high and price are all numbers and the high is above the low. */
+  function rangeBar(title, low, high, price, currency, note) {
+    if (!(isNum(low) && isNum(high) && isNum(price) && high > low)) return null;
+    const pos = clamp((price - low) / (high - low) * 100, 0, 100);
+    return h('div', { class: 'rangebox' },
+      h('div', { class: 'rangetop small' }, h('span', { class: 'muted' }, title), h('span', null, `${pos.toFixed(0)}% of the way up`)),
+      h('div', { class: 'rangebar', role: 'img', 'aria-label': `${title}: the price is at ${pos.toFixed(0)} percent of the range from ${money(low, currency)} to ${money(high, currency)}` }, h('i', { style: `left:${pos}%` })),
+      h('div', { class: 'rangeends small' }, h('span', null, money(low, currency)), note ? h('span', { class: 'muted' }, note) : null, h('span', null, money(high, currency))));
+  }
+
+  /* Today's range (the newest candle: the day so far while the market is open, else the last session) and the 52-week range. */
+  function rangesBlock(s) {
+    const i = s.indicators || {}, day = s.day || {};
+    const bars = [rangeBar(s.provisional ? "Today's range so far" : `Day range, ${shortDay(s.as_of)}`, day.low, day.high, s.price, s.currency),
+      rangeBar('52-week range', i.lo252, i.hi252, s.price, s.currency)].filter(Boolean);
+    return bars.length ? h('div', { class: 'ranges' }, bars) : null;
+  }
+
+  /* The latest results and the price against the index, one factual card each. A card with no figure behind it is not shown, and nothing is called good or bad:
+     the colour only says up or down. */
+  function insightCards(s) {
+    const sum = (s.statements || {}).summary || {};
+    const cards = [];
+    const trend = (label, key) => {
+      const q = (sum.qoq || {})[key], y = (sum.yoy || {})[key];
+      if (!isNum(q) && !isNum(y)) return;
+      const main = isNum(q) ? q : y;
+      cards.push({ label, value: signed(main, 1), tone: main > 0 ? 'up' : main < 0 ? 'down' : '',
+        text: isNum(q) ? `on the quarter before${isNum(y) ? `; ${signed(y, 1)} on a year earlier` : ''}` : 'on a year earlier' });
+    };
+    trend('Revenue', 'revenue'); trend('Operating profit', 'operating_income'); trend('Net profit', 'net_income');
+    const rs = (s.indicators || {}).rs126;
+    if (isNum(rs)) cards.push({ label: 'Against the index', value: signed(rs, 1, ' pts'), tone: rs > 0 ? 'up' : rs < 0 ? 'down' : '', text: `${rs >= 0 ? 'Ahead of' : 'Behind'} the index by ${Math.abs(rs).toFixed(1)} points over 6 months` });
+    const pe = (s.fundamentals || {}).pe, median = (ruleContext().sectorPE || {})[s.sector];
+    if (isNum(pe) && pe > 0 && median) cards.push({ label: 'P/E against its sector', value: `${(pe / median).toFixed(2)}×`, tone: '', text: `P/E ${pe.toFixed(1)}, sector median ${median.toFixed(1)}` });
+    if (!cards.length) return null;
+    return h('div', { class: 'insightbox' },
+      h('div', { class: 'insights', role: 'list', 'aria-label': 'Latest results at a glance' }, cards.map((c) => h('div', { class: 'insight', role: 'listitem' },
+        h('span', { class: 'muted small' }, c.label), h('b', { class: c.tone }, c.value), h('span', { class: 'small muted' }, c.text)))),
+      sum.latest_quarter ? h('p', { class: 'muted small', style: 'margin:4px 0 0' }, `Results for the quarter ended ${sum.latest_quarter}. Facts from the reported figures, not a view on the stock.`) : null);
+  }
+
   function priceMap(s) {
     const rows = levelRows(s);
-    const i = s.indicators || {};
-    const hasRange = isNum(i.lo252) && isNum(i.hi252) && i.hi252 > i.lo252 && isNum(s.price);
-    if ((!rows.length && !hasRange) || !isNum(s.price)) return null;
+    if (!rows.length || !isNum(s.price)) return null;
     const all = [...rows, { kind: 'now', label: 'Price now', v: s.price }].sort((a, b) => b.v - a.v);
     const table = rows.length ? h('table', { class: 'leveltable' },
       h('thead', null, h('tr', null, h('th', { scope: 'col' }, 'Level'), h('th', { scope: 'col', class: 'num' }, 'Price'), h('th', { scope: 'col', class: 'num' }, 'From price'))),
       h('tbody', null, all.map((r) => h('tr', { class: `l-${r.kind}` },
         h('th', { scope: 'row' }, r.label), h('td', { class: 'num' }, money(r.v, s.currency)),
         h('td', { class: 'num gap' }, r.kind === 'now' ? `as of ${shortDay(s.as_of)}` : signed((r.v / s.price - 1) * 100, 1)))))) : null;
-    let range = null;
-    if (hasRange) {
-      const pos = clamp((s.price - i.lo252) / (i.hi252 - i.lo252) * 100, 0, 100);
-      range = h('div', { class: 'rangebox' },
-        h('div', { class: 'rangetop small' }, h('span', { class: 'muted' }, '52-week range'), h('span', null, `${pos.toFixed(0)}% of the way up`)),
-        h('div', { class: 'rangebar', role: 'img', 'aria-label': `Price is at ${pos.toFixed(0)} percent of its 52-week range` }, h('i', { style: `left:${pos}%` })),
-        h('div', { class: 'rangeends small' }, h('span', null, money(i.lo252, s.currency)), h('span', null, money(i.hi252, s.currency))));
-    }
     const help = rows.length ? h('details', { class: 'mapnote small' }, h('summary', null, 'What do these levels mean?'),
       h('p', { class: 'muted', style: 'margin:4px 0 0' }, 'Resistance: rises have stalled here before. Support: falls have paused here before. Risk level: two average daily ranges below the price. They come from fixed rules on past prices and are references, not advice.')) : null;
-    return h('div', { class: 'pmap' }, table, range, help);
+    return h('div', { class: 'pmap' }, table, help);
   }
 
   function positionCalculator(s) {
@@ -1514,16 +1546,45 @@
       h('p', { class: 'muted small' }, 'Amounts are per share as reported by Yahoo Finance, on the ex-dividend date, adjusted for splits. A past dividend can be cut, and the yield moves with the share price.'));
   }
 
+  /* The peer ratio table: this stock, its largest peers in the same sector, and the median of every stock of that sector in the list. The figures are the
+     ones the alert rules use (Rules.fields), so the table and a rule never disagree. Banks and lenders show "n/a" for debt, EBITDA and ROCE, which do not
+     mean the same for them, and are left out of those medians. A median needs at least three figures. */
+  const PEER_COLUMNS = [['Mkt cap, Rs cr', 'cap_cr', (v) => Math.round(v).toLocaleString('en-IN')], ['P/E', 'pe', (v) => v.toFixed(1)], ['P/B', 'pb', (v) => v.toFixed(1)],
+    ['ROE', 'roe', (v) => `${v.toFixed(0)}%`], ['ROCE*', 'roce', (v) => `${v.toFixed(0)}%`], ['EV/EBITDA', 'ev_ebitda', (v) => v.toFixed(1)], ['Debt/equity', 'debt_equity', (v) => v.toFixed(2)]];
+  function peerFigure(stock, key) {
+    const f = FIELD_BY_KEY[key];
+    if (f.nf && stock.fin) return { na: 'Does not apply to banks and lenders' };
+    const v = f.get(stock, ruleContext());
+    return isNum(v) ? { v } : {};
+  }
+  function median(values) {
+    if (values.length < 3) return null;
+    const sorted = [...values].sort((x, y) => x - y), mid = sorted.length >> 1;
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  }
   function peersBlock(s) {
     if (s.sector === 'Other') return h('p', { class: 'muted small' }, 'The exchange does not publish a sector for this stock, so there is no peer group to compare.');
-    const peers = S.data.stocks.filter((p) => p.sector === s.sector && p.market === s.market && p.symbol !== s.symbol)
-      .sort((a, b) => ((b.fundamentals || {}).market_cap || 0) - ((a.fundamentals || {}).market_cap || 0)).slice(0, 5);
+    const group = S.data.stocks.filter((p) => p.sector === s.sector && p.market === s.market);
+    const peers = group.filter((p) => p.symbol !== s.symbol).sort((a, b) => ((b.fundamentals || {}).market_cap || 0) - ((a.fundamentals || {}).market_cap || 0)).slice(0, 7);
     if (!peers.length) return h('p', { class: 'muted small' }, 'No peers in the same sector.');
-    const row = (p, me) => h('tr', { style: me ? 'font-weight:700' : '' }, h('td', null, p.name), h('td', { class: 'num' }, number((p.fundamentals || {}).pe, 1)),
-      h('td', { class: 'num hide-sm' }, percent((p.fundamentals || {}).roe, 0)), h('td', { class: 'num hide-sm' }, percent(p.dividend_yield)), h('td', null, badge(p.long)));
-    return h('div', { style: 'overflow-x:auto' }, h('table', null,
-      h('thead', null, h('tr', null, h('th', null, 'Company'), h('th', { class: 'num' }, 'P/E'), h('th', { class: 'num hide-sm' }, 'ROE'), h('th', { class: 'num hide-sm' }, 'Dividend'), h('th', null, 'Long-term'))),
-      h('tbody', null, row(s, true), peers.map((p) => row(p, false)))));
+    const shown = [s, ...peers];
+    const columns = PEER_COLUMNS.filter(([, key]) => !shown.every((p) => peerFigure(p, key).na));          // a column that is n/a for every row (debt figures in a bank sector) is left out
+    const hidden = PEER_COLUMNS.length - columns.length;
+    const cell = (stock, [, key, fmt]) => {
+      const r = peerFigure(stock, key);
+      if (r.na) return h('td', { class: 'num' }, h('span', { class: 'na', title: r.na }, 'n/a'));
+      return h('td', { class: 'num' }, r.v === undefined ? naOr(DASH) : fmt(r.v));
+    };
+    const row = (p, me) => h('tr', { class: me ? 'me' : '' }, h('td', null, p.name), columns.map((c) => cell(p, c)), h('td', { class: 'hide-sm' }, badge(p.long)));
+    const medianRow = h('tr', { class: 'median' }, h('td', null, 'Sector median'), columns.map(([, key, fmt]) => {
+      const m = median(group.map((p) => peerFigure(p, key).v).filter(isNum));
+      return h('td', { class: 'num' }, m === null ? '–' : fmt(m));
+    }), h('td', { class: 'hide-sm' }));
+    return h('div', null,
+      h('div', { class: 'peerwrap' }, h('table', { class: 'peertable' },
+        h('thead', null, h('tr', null, h('th', null, 'Company'), columns.map(([label]) => h('th', { class: 'num' }, label)), h('th', { class: 'hide-sm' }, 'Long-term'))),
+        h('tbody', null, row(s, true), peers.map((p) => row(p, false)), medianRow))),
+      h('p', { class: 'muted small', style: 'margin:6px 0 0' }, `The largest peers by market value in the same sector, from the list in this app. The median covers all ${group.length} stocks of the sector in the list and needs at least three figures. ${hidden ? 'Debt, EBITDA and ROCE figures are left out because they do not mean the same for banks and lenders. ' : 'A bank or lender shows n/a for debt, EBITDA and ROCE. '}${columns.some(([, k]) => k === 'roce') ? '*ROCE is approximate: operating income over equity plus debt. ' : ''}Facts from reported figures, not a recommendation.`));
   }
 
   function pressureBlock(s) {
@@ -1670,7 +1731,7 @@
       h('div', { class: 'herotags chips-row' }, h('span', { class: 'tag' }, 'India'), s.exchange ? h('span', { class: 'tag' }, s.exchange) : null, s.sector ? h('span', { class: 'tag' }, s.sector) : null,
         qualityTag(s), flagTags(s)),
       verdictBlock(s),
-      priceMap(s), statsGrid(s), glanceChips(s));
+      rangesBlock(s), insightCards(s), priceMap(s), statsGrid(s), glanceChips(s));
 
     const panels = {
       overview: [
@@ -2517,7 +2578,7 @@
   const FIELD_BY_KEY = Object.fromEntries(FIELD_LIST.map((f) => [f.key, f]));
   const blankCond = (key) => {
     const f = FIELD_BY_KEY[key];
-    return f.type === 'num' ? { field: key, op: '<', value: key === 'rsi' ? 30 : 0 } : { field: key, op: 'is', value: f.options[0][0] };
+    return f.type === 'num' ? { field: key, op: key === 'rsi' ? '<' : '>', value: key === 'rsi' ? 30 : 0 } : { field: key, op: 'is', value: f.options[0][0] };
   };
   const sectorNames = () => [...new Set(S.data.stocks.map((s) => s.sector).filter((x) => x && x !== 'Other'))].sort();
   const scopeValue = (sc) => (sc.kind === 'LIST' ? 'L:' + sc.value : sc.kind === 'SECTOR' ? 'S:' + sc.value : sc.kind);
@@ -2656,6 +2717,29 @@
         : h('p', { class: 'muted small' }, 'Nothing yet. Alerts will appear here as they happen.')));
   }
 
+  /* Theme: follows the device until a person picks Light or Dark; the choice is kept on this device. */
+  function setupTheme() {
+    const button = $('#theme');
+    const order = [null, 'light', 'dark'];
+    const names = { null: 'follows the device', light: 'light', dark: 'dark' };
+    const draw = (inner) => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+    const ICONS = { system: draw('<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/>'), light: draw('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'), dark: draw('<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5z"/>') };
+    const apply = (value) => {
+      if (value) document.documentElement.setAttribute('data-theme', value); else document.documentElement.removeAttribute('data-theme');
+      button.setAttribute('aria-label', `Theme: ${names[value]}. Tap to change.`);
+      button.title = `Theme: ${names[value]}`;
+      button.innerHTML = ICONS[value || 'system'];
+    };
+    let current = store.get('theme', null);
+    if (current !== 'light' && current !== 'dark') current = null;
+    apply(current);
+    button.addEventListener('click', () => {
+      current = order[(order.indexOf(current) + 1) % order.length];
+      store.set('theme', current); apply(current);
+      toast(`Theme: ${names[current]}`);
+    });
+  }
+
   function setupNotifications() {
     const btn = $('#notify');
     const paint = () => { btn.setAttribute('aria-pressed', S.notify ? 'true' : 'false'); btn.textContent = S.notify ? 'Alerts on' : 'Alerts off'; };
@@ -2678,6 +2762,7 @@
     dlg.addEventListener('close', () => { clearHash(); if (lastFocus && document.contains(lastFocus)) lastFocus.focus({ preventScroll: true }); });
     window.addEventListener('hashchange', openFromHash);
     setupNotifications();
+    setupTheme();
     load(false);
     setInterval(() => { if (!document.hidden) load(false); }, REFRESH_MS);
     setInterval(updateHeader, 60 * 1000);

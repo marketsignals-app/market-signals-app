@@ -165,6 +165,7 @@ The Alerts tab holds each person's own alerts. Nothing is sent to a server: the 
   - **Banks and lenders** are flagged and skipped for debt, cash flow, margins, current ratio and EBITDA figures, which do not mean the same for them; the count says how many were skipped.
   - **Coverage:** these figures exist only for stocks analysed in depth. Any other stock is counted as "could not be checked", never guessed. Not available from free sources, so not offered: ROIC, interest coverage, cash conversion cycle, working capital efficiency, Piotroski score, share dilution, historical P/E comparison, promoter holding and pledge, governance and capital allocation scores.
 - **Settings:** "Move settings to another device" makes a short text code (`SS1:...`) holding the watchlist, own lists, switches and rules. Copy it, or send it to your own Telegram (for example Saved Messages), and paste it into the app on the other device. There is no login, no account and no server; the code is built and read in the browser (`packSettings` and `unpackSettings` in `site/rules.js`, tested in `tests/rules.test.js`).
+- **Theme:** the sun/moon button in the header cycles Device setting, Light and Dark; the choice is kept on this device and applied before the page paints, so there is no flash.
 - **Triggered:** the last 200 alerts, with the popup shown when "Alerts" at the top is on.
 - Alerts do not arrive when the app is closed. Closed-app delivery stays with the Telegram channel, which cannot filter per person.
 - Tests: `tests/rules.test.js` (run by `update.yml` with the IPO tests).
@@ -183,6 +184,12 @@ signal components were stronger on winners, and suggested improvements.
 * The repository must allow the workflow to write: **Settings > Actions > General > Workflow permissions > Read and write**.
   If the ledger cannot be saved, calls wait in the site's state and are saved on the next run.
 * The data branch is public if the repository is public.
+
+## Stock page: ranges and result cards
+
+At the top of a stock's page: a **day range** bar (the newest candle: the day so far while the market is open, else the last session) and a **52-week range** bar, each with a marker at the price. Below them, up to five **result cards**: revenue, operating profit and net profit (change on the quarter before, and on a year earlier), the six-month return against the index, and the P/E against its sector's median. They come from the reported quarterly figures and the engine's own numbers; a card with no figure is not shown, and the colour only says up or down, never good or bad. The sector median needs at least four stocks with a positive P/E in the main list, so other stocks have no P/E card.
+
+**Peer ratio table** (Fundamentals tab): this stock and its seven largest same-sector peers from the list, with market cap (Rs crore), P/E, P/B, ROE, an approximate ROCE, EV/EBITDA and debt to equity, and a **sector median** row over every stock of the sector in the list (at least three figures needed). The figures are the same ones the alert rules use. Banks and lenders show n/a for debt, EBITDA and ROCE, and a column that is n/a for every row is left out. Nothing is ranked or coloured as better or worse.
 
 ## Layout: glance first
 

@@ -8,8 +8,9 @@
   --cat-actions: #7e22ce; --cat-actions-bg: #f3e8ff; --cat-announced: #8a5a00; --cat-announced-bg: #fff2d6;
   color-scheme: light dark;
 }
+/* The theme follows the device unless a person picks one: data-theme on the page is "light" or "dark" (set from the Theme button; none means the device's own setting). */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #0e1318; --card: #161d24; --text: #e6ebf0; --muted: #9aa8b5; --line: #2a343e;
     --accent: #3cc4b6; --accent-bg: #12312f;
     --buy: #5ad08a; --buy-bg: #12301f; --sell: #ff8a80; --sell-bg: #3a1613; --hold: #b4bfca; --hold-bg: #242d36;
@@ -17,8 +18,20 @@
     --on-accent: #0e1318; --star: #e0a100;
     --cat-results: #8ab4ff; --cat-results-bg: #1b2740; --cat-dividends: #5ad08a; --cat-dividends-bg: #12301f;
     --cat-actions: #d2a8ff; --cat-actions-bg: #2e1f45; --cat-announced: #f5c451; --cat-announced-bg: #3a2e10;
+    color-scheme: dark;
   }
 }
+:root[data-theme="dark"] {
+    --bg: #0e1318; --card: #161d24; --text: #e6ebf0; --muted: #9aa8b5; --line: #2a343e;
+    --accent: #3cc4b6; --accent-bg: #12312f;
+    --buy: #5ad08a; --buy-bg: #12301f; --sell: #ff8a80; --sell-bg: #3a1613; --hold: #b4bfca; --hold-bg: #242d36;
+    --warn: #f5c451; --warn-bg: #3a2e10;
+    --on-accent: #0e1318; --star: #e0a100;
+    --cat-results: #8ab4ff; --cat-results-bg: #1b2740; --cat-dividends: #5ad08a; --cat-dividends-bg: #12301f;
+    --cat-actions: #d2a8ff; --cat-actions-bg: #2e1f45; --cat-announced: #f5c451; --cat-announced-bg: #3a2e10;
+  color-scheme: dark;
+}
+:root[data-theme="light"] { color-scheme: light; }
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
@@ -470,3 +483,26 @@ details.evidence summary { cursor: pointer; font-size: 13px; }
 }
 
 .al-types textarea { width: 100%; box-sizing: border-box; margin-top: 8px; background: var(--card); color: inherit; border: 1px solid var(--line); border-radius: 8px; padding: 8px; font: 12px/1.4 ui-monospace, monospace; }
+
+#theme svg { display: block; margin: auto; }
+
+/* Stock page: ranges and result cards */
+.ranges { display: grid; gap: 14px; margin: 10px 0; }
+.insights { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin: 10px 0 0; }
+.insight { display: grid; gap: 2px; align-content: start; padding: 10px 12px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+.insight b { font-size: 20px; font-variant-numeric: tabular-nums; }
+.insight b.up { color: var(--buy); } .insight b.down { color: var(--sell); }
+@media (max-width: 720px) { .insights { grid-template-columns: repeat(2, minmax(0, 1fr)); } .insight b { font-size: 18px; } }
+
+a.iconbtn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+a.iconbtn.tg { color: var(--accent); }
+
+/* Peer ratio table */
+.peerwrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.peertable { border-collapse: collapse; width: 100%; font-size: 13px; }
+.peertable th, .peertable td { padding: 7px 8px; white-space: nowrap; border-bottom: 1px solid var(--line); }
+.peertable th { font-size: 11.5px; font-weight: 600; color: var(--muted); text-align: left; }
+.peertable th.num, .peertable td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.peertable th:first-child, .peertable td:first-child { position: sticky; left: 0; background: var(--card); z-index: 1; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+.peertable tr.me td { background: var(--accent-bg); font-weight: 700; }
+.peertable tr.median td { font-weight: 600; color: var(--muted); border-top: 2px solid var(--line); }

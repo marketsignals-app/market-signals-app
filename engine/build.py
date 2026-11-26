@@ -302,6 +302,7 @@ def analyse(entry, ctx):
     }
     if live:
         record["live"] = live
+    record["day"] = {k: r(live_bars[key][-1]) for k, key in (("open", "o"), ("high", "h"), ("low", "l")) if live_bars[key][-1] is not None}       # the newest candle: today's range so far while the market is open, else the last session's
     if n >= 30:
         record["patterns"] = patterns.detect_patterns(bars, ind)
     if n >= 60:

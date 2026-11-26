@@ -351,6 +351,10 @@ class AnalyseWithUnfinishedCandleTests(unittest.TestCase):
         self.assertEqual(self.analyse(trimmed, self.session[1] + 99999)["short"]["score"], record["short"]["score"])
         self.assertEqual(record["short"]["confidence"], "full")
 
+    def test_the_record_carries_the_range_of_the_newest_candle(self):
+        record = self.analyse(self.chart(), self.session[0] + 3600)
+        self.assertEqual(record["day"], {"open": round(self.closes[-1], 4), "high": round(self.closes[-1] * 1.01, 4), "low": round(self.closes[-1] * 0.99, 4)})
+
     def test_the_unfinished_candle_gets_its_own_marked_reading_without_volume(self):
         record = self.analyse(self.chart(), self.session[0] + 3600)
         live = record["live"]["short"]

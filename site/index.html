@@ -6,6 +6,7 @@
 <title>Stock Signals</title>
 <meta name="description" content="Buy, hold and sell signals for Indian stocks, with news, buying pressure, risk and IPO checks.">
 <meta name="theme-color" content="#0f766e">
+<script>try { var t = JSON.parse(localStorage.getItem("ss.theme")); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) { /* the device setting applies */ }</script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css">
@@ -28,8 +29,9 @@
   <div class="status">
     <span id="updated" role="status">Loading data...</span>
     <button id="refresh" class="iconbtn" type="button" aria-label="Refresh data" title="Refresh data">&#8635;</button>
-    <a class="chip" href="https://t.me/marketsignalsapp" target="_blank" rel="noopener noreferrer" title="Get alerts in the Telegram channel">Telegram</a>
+    <a class="iconbtn tg" href="https://t.me/marketsignalsapp" target="_blank" rel="noopener noreferrer" title="Telegram channel" aria-label="Telegram channel (opens Telegram)"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.5 3.5 2.5 10.8l6.2 2.4 2.4 6.3 3.2-4.4 4.7 3.5z"/><path d="m8.7 13.2 12.8-9.7"/></svg></a>
     <button id="notify" class="chip" type="button" aria-pressed="false">Alerts off</button>
+    <button id="theme" class="iconbtn" type="button" aria-label="Theme: follows the device. Tap to change." title="Theme"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v18" /></svg></button>
   </div>
 </header>
 <div id="banner" class="banner" role="alert" hidden></div>
