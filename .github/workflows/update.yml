@@ -46,7 +46,7 @@ jobs:
       - name: Test (the site is not published if a test fails)
         run: |
           python -m unittest discover -s tests -t .
-          node --test tests/ipo.test.js
+          node --test tests/ipo.test.js tests/rules.test.js
 
       - name: Build data
         env:

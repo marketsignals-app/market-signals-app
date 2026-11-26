@@ -19,6 +19,7 @@
     <button type="button" data-tab="suggest">Screens</button>
     <button type="button" data-tab="news">News</button>
     <button type="button" data-tab="announcements">Announcements</button>
+    <button type="button" data-tab="alerts">Alerts</button>
     <button type="button" data-tab="ipo">IPOs</button>
     <button type="button" data-tab="market">Market</button>
     <button type="button" data-tab="events">Events</button>
@@ -27,14 +28,14 @@
   <div class="status">
     <span id="updated" role="status">Loading data...</span>
     <button id="refresh" class="iconbtn" type="button" aria-label="Refresh data" title="Refresh data">&#8635;</button>
-    <a class="chip" href="https://t.me/marketsignalsapp" target="_blank" rel="noopener noreferrer" title="Get alerts in the Telegram channel">Telegram channel</a>
+    <a class="chip" href="https://t.me/marketsignalsapp" target="_blank" rel="noopener noreferrer" title="Get alerts in the Telegram channel">Telegram</a>
     <button id="notify" class="chip" type="button" aria-pressed="false">Alerts off</button>
   </div>
 </header>
 <div id="banner" class="banner" role="alert" hidden></div>
 <aside class="advisory" aria-label="Advisory">
-  <strong>Advisory:</strong> for information and education only. Not investment advice, research analysis or a recommendation to buy, sell or hold.
-  We are not a SEBI-registered investment adviser or research analyst.
+  <strong>Advisory:</strong> <span class="adv-short">Not investment advice.</span><span class="adv-long">for information and education only. Not investment advice, research analysis or a recommendation to buy, sell or hold.
+  We are not a SEBI-registered investment adviser or research analyst.</span>
   <a href="advisory.html">Read the full disclaimer</a>
 </aside>
 <main id="view" tabindex="-1"></main>
@@ -45,6 +46,7 @@
   <button type="button" data-tab="suggest"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16l-6 8v6l-4-2v-4z"/></svg><span>Screens</span></button>
   <button type="button" data-tab="news"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h13v14H6a2 2 0 0 1-2-2zM17 9h3v8a2 2 0 0 1-2 2M7 9h7M7 13h7"/></svg><span>News</span></button>
   <button type="button" data-tab="announcements"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v13H8l-4 4zM8 9h8M8 13h5"/></svg><span>Notices</span></button>
+  <button type="button" data-tab="alerts"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 17V11a6 6 0 0 1 12 0v6l2 2H4zM10 21h4"/></svg><span>Alerts</span></button>
   <button type="button" data-tab="ipo"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.5 5.5L20 9l-4 4 1 6-5-3-5 3 1-6-4-4 5.5-.5z"/></svg><span>IPOs</span></button>
   <button type="button" data-tab="market"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Market</span></button>
   <button type="button" data-tab="events"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16v14H4zM4 10h16M8 3v4M16 3v4"/></svg><span>Events</span></button>
@@ -58,6 +60,7 @@
   Alerts are also posted to the <a href="https://t.me/marketsignalsapp" target="_blank" rel="noopener noreferrer">Telegram channel</a>.
 </footer>
 <script src="ipo.js"></script>
+<script src="rules.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -1,5 +1,5 @@
-const CACHE = 'signals-v43';
-const SHELL = ['./', 'index.html', 'advisory.html', 'style.css', 'app.js', 'ipo.js', 'icon.svg', 'manifest.webmanifest'];
+const CACHE = 'signals-v49';
+const SHELL = ['./', 'index.html', 'advisory.html', 'style.css', 'app.js', 'ipo.js', 'rules.js', 'icon.svg', 'manifest.webmanifest'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL.map((path) => new Request(path, { cache: 'reload' })))).then(() => self.skipWaiting()));

@@ -155,6 +155,17 @@ either level, the bot replies under the original Telegram message ("REFERENCE LE
 the analysis. A call that simply runs out of time is recorded but not announced. If the original message was
 deleted, the reply is still sent on its own. Each outcome is announced once.
 
+## Alerts tab (personal, on the device)
+
+The Alerts tab holds each person's own alerts. Nothing is sent to a server: the watchlist, switches and rules live in the browser (`localStorage`) and are checked in `site/rules.js` each time the data refreshes, while the app is open.
+
+- **Watchlist alerts:** switches for a reading turning bullish or bearish, fresh news, ex-dividend and results dates coming up, split/bonus/rights/buyback, mergers, exchange restrictions, circuits, gaps/surges/crashes and 52-week highs and lows. They only cover stocks on My watchlist. The first check records what already exists, so nothing floods in.
+- **My rules:** up to 20 rules of up to 6 conditions (AND or OR) over the whole market list (`index.json`) or the watchlist, a list or a sector. A rule alerts when a stock newly starts to match it. A live count shows how many stocks match, and how many could not be checked for lack of a value. Indicator fields (RSI, averages, MACD, pressure) exist only for stocks analysed in depth.
+- **Settings:** "Move settings to another device" makes a short text code (`SS1:...`) holding the watchlist, own lists, switches and rules. Copy it, or send it to your own Telegram (for example Saved Messages), and paste it into the app on the other device. There is no login, no account and no server; the code is built and read in the browser (`packSettings` and `unpackSettings` in `site/rules.js`, tested in `tests/rules.test.js`).
+- **Triggered:** the last 200 alerts, with the popup shown when "Alerts" at the top is on.
+- Alerts do not arrive when the app is closed. Closed-app delivery stays with the Telegram channel, which cannot filter per person.
+- Tests: `tests/rules.test.js` (run by `update.yml` with the IPO tests).
+
 ## Track record
 
 Every call and its outcome is stored in plain files on a separate **`data`** branch of this repository (created on

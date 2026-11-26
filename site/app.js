@@ -1,6 +1,7 @@
 'use strict';
 (function () {
   const IPO = window.IPO;
+  const Rules = window.Rules;
   const REFRESH_MS = 5 * 60 * 1000;
   const CURRENCY = { INR: '₹', USD: '$' };
   const FREQ_CODE = { Monthly: 'M', Quarterly: 'Q', 'Half-yearly': 'H', Yearly: 'Y' };
@@ -76,7 +77,27 @@
     const v = hzList(hz).map((k) => (s[k] || {}).score).filter((x) => typeof x === 'number' && Number.isFinite(x));
     return v.length === hzList(hz).length ? v.reduce((a, b) => a + b, 0) / v.length : null;
   };
-  const badges = (s, hz) => hzList(hz).map((k) => badge(s[k]));
+  /* With both views chosen, one badge says what they say together. Two badges side by side, one bullish and one bearish, read as a contradiction. */
+  const SIDE_WORD = { buy: 'bullish', sell: 'bearish', hold: 'mixed' };
+  function badges(s, hz) {
+    if (hz !== 'both') return [badge(s[hz])];
+    const a = s.short || {}, b = s.long || {};
+    const both = readingSide(s, 'both');
+    if (both === null) return hzList(hz).map((k) => badge(s[k]));
+    const score = readingScore(s, 'both');
+    if (both === 'hold' && side(a.label) !== side(b.label)) {
+      const el = badge({ label: 'Hold', score: null });
+      const detail = `weeks ${SIDE_WORD[side(a.label)]}, months ${SIDE_WORD[side(b.label)]}`;
+      el.title = `The two views differ: ${detail}`;
+      el.querySelector('.bfull').textContent = 'Views differ';
+      return [el, h('div', { class: 'muted small bfull' }, detail)];
+    }
+    const strong = a.label === b.label && /^Strong/.test(a.label);
+    const label = both === 'buy' ? (strong ? 'Strong Buy' : 'Buy') : both === 'sell' ? (strong ? 'Strong Sell' : 'Sell') : 'Hold';
+    const el = badge({ label, score: isNum(score) ? Math.round(score) : null });
+    el.title = `Both views agree: ${labelText(label)}`;
+    return [el];
+  }
 
   /* What each label is shown as. The stored labels stay Buy/Hold/Sell so filters and records keep working. */
   const LABEL_TEXT = { 'Strong Buy': 'Strongly aligned bullish', Buy: 'Aligned bullish', Hold: 'Mixed', Sell: 'Aligned bearish', 'Strong Sell': 'Strongly aligned bearish',
@@ -123,10 +144,32 @@
       if (S.notify && 'Notification' in window && Notification.permission === 'granted') new Notification('Stock Signals', { body: text });
     } catch (e) { /* notifications unavailable */ }
   }
-  function checkChanges() {
+  /* ---------- alerts: switches for the watchlist, and rules over the whole market list (all checked on this device) ---------- */
+  const AL = { prefs: Object.assign(Rules.defaultPrefs(), store.get('alertPrefs', {})), rules: store.get('alertRules', []).map(Rules.clean).filter(Boolean),
+    seen: store.get('alertSeen', null), matched: store.get('ruleMatched', {}), log: store.get('alertLog', []), checking: false };
+  const newId = () => Math.random().toString(36).slice(2, 10);
+  AL.rules.forEach((r) => { if (!r.id) r.id = newId(); });
+  const saveRules = () => store.set('alertRules', AL.rules);
+  const savePrefs = () => store.set('alertPrefs', AL.prefs);
+  const allStocks = () => S.data.stocks.concat(S.others);
+  const ruleContext = () => ({ watch: S.watch, lists: S.lists });
+  const nameOf = (symbol) => { const x = allStocks().find((r) => r.symbol === symbol); return x ? x.name : symbol; };
+
+  function emitAlerts(items) {
+    if (!items.length) return;
+    const ts = Math.floor(Date.now() / 1000);
+    AL.log = items.map((i) => ({ ts, ...i })).concat(AL.log).slice(0, 200);
+    store.set('alertLog', AL.log);
+    items.slice(0, 6).forEach((i) => announce(`${i.name || i.symbol}: ${i.text}`));
+    if (items.length > 6) toast(`${items.length - 6} more alerts. See the Alerts tab.`);
+    if (S.tab === 'alerts') render();
+  }
+
+  // A reading that changes side, and fresh news, for the stocks of the watchlist (compared with what was seen on the last visit).
+  function readingAndNewsAlerts() {
     const previous = store.get('lastSeen', null);
     const current = {};
-    const messages = [];
+    const items = [];
     for (const s of S.data.stocks) {
       if (!S.watch.has(s.symbol)) continue;
       current[s.symbol] = { short: s.short.label, long: s.long.label, news: s.news.fresh.map((a) => a.link || a.title) };
@@ -135,14 +178,50 @@
       for (const [key, name] of [['short', 'short-term'], ['long', 'long-term']]) {
         const was = before[key];
         const now = current[s.symbol][key];
-        if (was && was !== 'N/A' && now !== 'N/A' && side(was) !== side(now)) messages.push(`${s.name}: ${name} reading ${labelText(was)} → ${labelText(now)}`);
+        if (!was || was === 'N/A' || now === 'N/A' || side(was) === side(now)) continue;
+        const type = side(now) === 'buy' || (side(now) === 'hold' && side(was) === 'sell') ? 'reading_bullish' : 'reading_bearish';
+        items.push({ kind: 'type', type, symbol: s.symbol, name: s.name, text: `${name} reading ${labelText(was)} → ${labelText(now)}` });
       }
       for (const a of s.news.fresh) {
-        if (!before.news.includes(a.link || a.title)) messages.push(`News, ${s.name}: ${a.title}`);
+        if (!before.news.includes(a.link || a.title)) items.push({ kind: 'type', type: 'news', symbol: s.symbol, name: s.name, text: `News: ${a.title}` });
       }
     }
     store.set('lastSeen', current);
-    messages.slice(0, 6).forEach(announce);
+    return items.filter((i) => AL.prefs[i.type]);
+  }
+  function checkChanges() { emitAlerts(readingAndNewsAlerts()); }
+
+  async function checkAlerts() {
+    if (AL.checking || !S.data) return;
+    AL.checking = true;
+    try {
+      const nowTs = Math.floor(Date.now() / 1000);
+      const today = new Date(nowTs * 1000 + 19800000).toISOString().slice(0, 10);
+      let notices = [];
+      if (S.watch.size && Rules.TYPES.some((t) => AL.prefs[t.key] && ['share_actions', 'mergers', 'restrictions', 'circuits', 'moves'].includes(t.key))) {
+        try { const r = await fetch('announcements.json', { cache: 'no-store' }); if (r.ok) notices = (await r.json()).items || []; } catch (e) { /* the other alerts still work */ }
+      }
+      const found = Rules.typeAlerts(AL.prefs, S.watch, notices, (S.data.events || {}).items, nowTs, 3).concat(Rules.rangeAlerts(AL.prefs, allStocks(), S.watch, today));
+      const first = AL.seen === null;
+      const seen = new Set(AL.seen || []);
+      const fresh = found.filter((i) => !seen.has(i.id));
+      fresh.forEach((i) => seen.add(i.id));
+      AL.seen = [...seen].slice(-1500);
+      store.set('alertSeen', AL.seen);
+      if (!first) emitAlerts(fresh.map((i) => ({ kind: 'type', ...i })));       // the first check only records what already exists
+
+      const active = AL.rules.filter((r) => r.on);
+      if (active.some(Rules.needsDeep)) { await loadExtra(); }
+      const items = [];
+      for (const rule of active) {
+        if (Rules.needsDeep(rule) && S.extra !== 'ready' && S.others.length) continue;       // the indicator file is not here yet: keep the last result
+        const { matches } = Rules.run(rule, allStocks(), ruleContext());
+        for (const symbol of Rules.newMatches(matches, AL.matched[rule.id]).slice(0, 20)) items.push({ kind: 'rule', rule: rule.name, symbol, name: nameOf(symbol), text: `${rule.name}: now matches` });
+        AL.matched[rule.id] = matches;
+      }
+      store.set('ruleMatched', AL.matched);
+      emitAlerts(items);
+    } finally { AL.checking = false; }
   }
 
   /* ---------- data loading ---------- */
@@ -229,6 +308,7 @@
       S.catalog = 'failed';        // the dashboard keeps working with the curated list
     }
     if ($('#cats')) updateSignals();
+    checkAlerts();
   }
   async function loadRecord(row) {
     let shard = S.shards.get(row.shard);
@@ -1502,6 +1582,11 @@
     const lean = sides[0] === sides[1] ? { buy: 'Both views aligned bullish', sell: 'Both views aligned bearish', hold: 'Both views mixed' }[sides[0]] : 'The two views differ';
     const part = (n, k) => (n ? h('i', { class: k, style: `flex:${n}` }) : null);
     return h('div', { class: 'vblock' },
+      (() => {
+        const a = s.short && s.short.label, b = s.long && s.long.label;
+        return a && b && a !== 'N/A' && b !== 'N/A' && side(a) !== side(b)
+          ? h('p', { class: 'muted small', style: 'margin:0 0 6px' }, `The two views point different ways: weeks ${SIDE_WORD[side(a)]}, months to years ${SIDE_WORD[side(b)]}. They measure different time frames, so neither cancels the other.`) : null;
+      })(),
       h('div', { class: 'verdicts' }, verdictCard('Weeks view', s.short), verdictCard('Months-to-years view', s.long)),
       ['short', 'long'].some((hz) => pastTest(s, hz)) ? h('div', { class: 'small muted', style: 'margin:6px 0' }, ['short', 'long'].map((hz) => (pastTest(s, hz) ? h('p', { style: 'margin:2px 0' }, h('b', null, hz === 'short' ? 'Weeks view. ' : 'Months-to-years view. '), pastTest(s, hz)) : null)), h('p', { style: 'margin:2px 0' }, 'Past results do not predict future ones.')) : null,
       checks.length ? h('div', { class: 'vsum' },
@@ -2393,9 +2478,177 @@
     }
     const view = $('#view');
     if (!S.data) { view.replaceChildren(h('div', { class: 'empty' }, S.error || 'Loading...')); return; }
-    const builders = { signals: viewSignals, suggest: viewSuggest, news: viewNews, announcements: viewAnnouncements, ipo: viewIpo, market: viewMarket, events: viewEvents, track: viewTrack };
+    const builders = { signals: viewSignals, suggest: viewSuggest, news: viewNews, announcements: viewAnnouncements, alerts: viewAlerts, ipo: viewIpo, market: viewMarket, events: viewEvents, track: viewTrack };
     view.replaceChildren((builders[S.tab] || viewSignals)());
     decorateHelp(view);
+  }
+
+  /* Settings live on the device. A code moves them to another one by hand: no account, no server. */
+  function backupCard() {
+    const area = h('textarea', { rows: '3', placeholder: 'Paste a settings code here', 'aria-label': 'Settings code', spellcheck: 'false' });
+    const status = h('p', { class: 'muted small', role: 'status' });
+    const code = () => Rules.packSettings({ watch: [...S.watch], lists: S.lists, prefs: AL.prefs, rules: AL.rules });
+    const importCode = () => {
+      const got = Rules.unpackSettings(area.value);
+      if (!got) { status.textContent = 'That is not a settings code. Copy the whole text, starting with SS1:'; return; }
+      if (!confirm(`Replace this device's settings with the code's: ${got.watch.length} stocks on the watchlist, ${Object.keys(got.lists).length} lists, ${got.rules.length} rules?`)) return;
+      S.watch = new Set(got.watch); saveWatch();
+      S.lists = got.lists; store.set('lists', S.lists);
+      AL.prefs = got.prefs; savePrefs();
+      AL.rules = got.rules; AL.rules.forEach((r) => { if (!r.id) r.id = newId(); }); saveRules();
+      AL.matched = {}; store.set('ruleMatched', AL.matched);          // rules start again from what matches now, without announcing it
+      toast('Settings imported.'); render(); checkAlerts();
+    };
+    return h('details', { class: 'card al-types' }, h('summary', null, h('span', null, 'Move settings to another device')),
+      h('p', { class: 'muted small' }, 'Your watchlist, lists, alert switches and rules live only on this device. To use them on another one, copy the code here and paste it there. No account is needed.'),
+      h('div', { class: 'al-actions' },
+        h('button', { type: 'button', class: 'btn ghost', onclick: async () => { try { await navigator.clipboard.writeText(code()); status.textContent = 'Code copied.'; } catch (e) { area.value = code(); area.select(); status.textContent = 'Select the text and copy it.'; } } }, 'Copy code'),
+        h('button', { type: 'button', class: 'btn ghost', onclick: () => window.open(`https://t.me/share/url?url=${encodeURIComponent(location.origin + location.pathname)}&text=${encodeURIComponent(code())}`, '_blank', 'noopener') }, 'Send to my Telegram')),
+      area, h('div', { class: 'al-actions' }, h('button', { type: 'button', class: 'btn', onclick: importCode }, 'Import')), status);
+  }
+
+  /* ---------- the Alerts tab ---------- */
+  const AL_UI = { draft: null, open: new Set() };
+  const FIELD_LIST = Rules.fields();
+  const FIELD_BY_KEY = Object.fromEntries(FIELD_LIST.map((f) => [f.key, f]));
+  const blankCond = (key) => {
+    const f = FIELD_BY_KEY[key];
+    return f.type === 'num' ? { field: key, op: '<', value: key === 'rsi' ? 30 : 0 } : { field: key, op: 'is', value: f.options[0][0] };
+  };
+  const sectorNames = () => [...new Set(S.data.stocks.map((s) => s.sector).filter((x) => x && x !== 'Other'))].sort();
+  const scopeValue = (sc) => (sc.kind === 'LIST' ? 'L:' + sc.value : sc.kind === 'SECTOR' ? 'S:' + sc.value : sc.kind);
+  const scopeFrom = (v) => (v.startsWith('L:') ? { kind: 'LIST', value: v.slice(2) } : v.startsWith('S:') ? { kind: 'SECTOR', value: v.slice(2) } : { kind: v });
+
+  // How many stocks a rule matches now, and how many it could not be decided for. Rules on indicators need the indicator file of the other stocks.
+  function countFor(rule) {
+    if (Rules.needsDeep(rule) && S.extra !== 'ready' && S.extra !== 'failed' && S.others.length) { loadExtra().then(() => { if (S.tab === 'alerts') updateAlertCounts(); }); return null; }
+    return Rules.run(rule, allStocks(), ruleContext());
+  }
+  function countText(rule) {
+    const r = countFor(rule);
+    if (!r) return 'Counting...';
+    return `${r.matches.length} stocks match now` + (r.noData ? ` (${r.noData} could not be checked: no data for this field)` : '');
+  }
+  function updateAlertCounts() {
+    for (const el of document.querySelectorAll('[data-rule-count]')) {
+      const rule = el.dataset.ruleCount === 'draft' ? Rules.clean(AL_UI.draft) : AL.rules.find((x) => x.id === el.dataset.ruleCount);
+      if (rule) el.textContent = countText(rule);
+    }
+  }
+
+  function ruleForm() {
+    const d = AL_UI.draft;
+    const box = h('div', { class: 'card al-form' });
+    const draw = () => {
+      const preview = h('p', { class: 'al-count', 'data-rule-count': 'draft' });
+      const refresh = () => { const rule = Rules.clean(d); preview.textContent = rule ? countText(rule) : 'Fill in every condition with a number or choice.'; };
+      const fieldSelect = (c, i) => h('select', { 'aria-label': 'Field', onchange: (e) => { d.conds[i] = blankCond(e.target.value); draw(); } },
+        [...new Set(FIELD_LIST.map((f) => f.group))].map((g) => h('optgroup', { label: g }, FIELD_LIST.filter((f) => f.group === g).map((f) => h('option', { value: f.key, selected: f.key === c.field }, f.label)))));
+      const valueInput = (c) => {
+        const f = FIELD_BY_KEY[c.field];
+        if (f.type === 'num') return h('input', { type: 'number', step: 'any', value: String(c.value), 'aria-label': 'Value', oninput: (e) => { c.value = e.target.value === '' ? '' : Number(e.target.value); refresh(); } });
+        return h('select', { 'aria-label': 'Value', onchange: (e) => { c.value = e.target.value; refresh(); } }, f.options.map(([k, label]) => h('option', { value: k, selected: k === c.value }, label)));
+      };
+      const opSelect = (c) => {
+        const f = FIELD_BY_KEY[c.field];
+        return h('select', { 'aria-label': 'Condition', onchange: (e) => { c.op = e.target.value; refresh(); } }, (f.type === 'num' ? Rules.NUMBER_OPS : Rules.ENUM_OPS).map(([k, label]) => h('option', { value: k, selected: k === c.op }, label)));
+      };
+      box.replaceChildren(
+        h('h3', null, d.id ? 'Edit rule' : 'New rule'),
+        h('div', { class: 'al-grid' },
+          h('label', { class: 'field' }, h('span', null, 'Name'), h('input', { type: 'text', maxlength: '40', value: d.name, oninput: (e) => { d.name = e.target.value; } })),
+          h('label', { class: 'field' }, h('span', null, 'Stocks to check'), h('select', { onchange: (e) => { d.scope = scopeFrom(e.target.value); refresh(); } },
+            h('option', { value: 'ALL', selected: d.scope.kind === 'ALL' }, 'The whole market list'), h('option', { value: 'WATCH', selected: d.scope.kind === 'WATCH' }, 'My watchlist'),
+            Object.keys(S.lists).map((n) => h('option', { value: 'L:' + n, selected: scopeValue(d.scope) === 'L:' + n }, 'My list: ' + n)),
+            sectorNames().map((n) => h('option', { value: 'S:' + n, selected: scopeValue(d.scope) === 'S:' + n }, 'Sector: ' + n)))),
+          h('label', { class: 'field' }, h('span', null, 'Alert when'), h('select', { onchange: (e) => { d.mode = e.target.value; refresh(); } },
+            h('option', { value: 'all', selected: d.mode === 'all' }, 'ALL conditions are true'), h('option', { value: 'any', selected: d.mode === 'any' }, 'ANY condition is true')))),
+        ...d.conds.map((c, i) => h('div', { class: 'al-cond' }, fieldSelect(c, i), h('div', { class: 'al-condrow' }, opSelect(c), valueInput(c),
+          d.conds.length > 1 ? h('button', { type: 'button', class: 'linkbtn danger', 'aria-label': 'Remove condition', onclick: () => { d.conds.splice(i, 1); draw(); } }, 'Remove') : null))),
+        h('div', { class: 'al-actions' },
+          d.conds.length < Rules.MAX_CONDITIONS ? h('button', { type: 'button', class: 'linkbtn', onclick: () => { d.conds.push(blankCond('change_pct')); draw(); } }, '+ Add condition') : null),
+        preview,
+        h('div', { class: 'al-buttons' },
+          h('button', { type: 'button', class: 'btn', onclick: () => {
+            const rule = Rules.clean(d);
+            if (!rule) { toast('Fill in every condition with a number or choice first.'); return; }
+            if (d.id) { const i = AL.rules.findIndex((x) => x.id === d.id); rule.id = d.id; AL.rules[i] = rule; }
+            else if (AL.rules.length >= Rules.MAX_RULES) { toast(`You can keep up to ${Rules.MAX_RULES} rules.`); return; }
+            else { rule.id = newId(); AL.rules.push(rule); }
+            delete AL.matched[rule.id];                          // a changed rule starts again from what matches now, without announcing it
+            saveRules(); store.set('ruleMatched', AL.matched); AL_UI.draft = null; checkAlerts(); render();
+          } }, 'Save rule'),
+          h('button', { type: 'button', class: 'btn ghost', onclick: () => { AL_UI.draft = null; render(); } }, 'Cancel')));
+      refresh();
+    };
+    draw();
+    return box;
+  }
+
+  const switchEl = (checked, label, onchange) => h('label', { class: 'switch' }, h('input', { type: 'checkbox', checked, onchange }), h('span', { class: 'track', 'aria-hidden': 'true' }), h('span', { class: 'swtext' }, label));
+  const alSection = (title, hint) => h('div', { class: 'al-sec' }, h('h3', null, title), hint ? h('p', { class: 'muted small' }, hint) : null);
+
+  function viewAlerts() {
+    const typeGroups = [...new Set(Rules.TYPES.map((t) => t.group))];
+    const onCount = Rules.TYPES.filter((t) => AL.prefs[t.key]).length;
+    const setAll = (on) => { Rules.TYPES.forEach((t) => { AL.prefs[t.key] = on; }); savePrefs(); render(); };
+    const known = (symbol) => S.data.stocks.some((s) => s.symbol === symbol) || S.others.some((s) => s.symbol === symbol);
+    const deepWaiting = (rule) => Rules.needsDeep(rule) && S.extra !== 'ready' && S.extra !== 'failed' && S.others.length;
+
+    const rules = AL.rules.map((rule) => {
+      const open = AL_UI.open.has(rule.id);
+      const result = open && !deepWaiting(rule) ? Rules.run(rule, allStocks(), ruleContext()) : null;
+      return h('div', { class: 'card al-rule' + (rule.on ? '' : ' off') },
+        h('div', { class: 'al-top' }, h('strong', null, rule.name), switchEl(rule.on, 'On', (e) => { rule.on = e.target.checked; saveRules(); if (rule.on) delete AL.matched[rule.id]; checkAlerts(); render(); })),
+        h('p', { class: 'al-desc' }, Rules.describe(rule)),
+        h('p', { class: 'al-count', 'data-rule-count': rule.id }, 'Counting...'),
+        h('div', { class: 'al-actions' },
+          h('button', { type: 'button', class: 'linkbtn', onclick: () => { if (open) AL_UI.open.delete(rule.id); else AL_UI.open.add(rule.id); render(); } }, open ? 'Hide matches' : 'Show matches'),
+          h('button', { type: 'button', class: 'linkbtn', onclick: () => { AL_UI.draft = JSON.parse(JSON.stringify(rule)); render(); } }, 'Edit'),
+          h('button', { type: 'button', class: 'linkbtn danger', onclick: () => {
+            if (!confirm(`Delete the rule "${rule.name}"?`)) return;
+            AL.rules = AL.rules.filter((x) => x.id !== rule.id); delete AL.matched[rule.id]; saveRules(); store.set('ruleMatched', AL.matched); render();
+          } }, 'Delete')),
+        result ? h('div', { class: 'chips-row al-matches' },
+          result.matches.slice(0, 40).map((sym) => h('button', { type: 'button', class: 'chip', onclick: (e) => openDetail(sym, e.currentTarget) }, nameOf(sym))),
+          result.matches.length > 40 ? h('span', { class: 'muted small' }, `and ${result.matches.length - 40} more`) : (result.matches.length ? null : h('span', { class: 'muted small' }, 'No stock matches right now.'))) : null);
+    });
+
+    const log = AL.log.slice(0, 30).map((e) => {
+      const t = istParts(e.ts);
+      const kind = e.kind === 'rule' ? 'Rule' : (Rules.TYPES.find((x) => x.key === e.type) || {}).label || 'Alert';
+      return h('li', null,
+        h('div', { class: 'al-logtop' }, known(e.symbol) ? h('button', { type: 'button', class: 'linkbtn', onclick: (ev) => openDetail(e.symbol, ev.currentTarget) }, e.name || e.symbol) : h('strong', null, e.name || e.symbol),
+          h('span', { class: 'muted small' }, `${t.day} ${t.time}`)),
+        h('div', { class: 'small' }, e.text), h('div', { class: 'muted small' }, kind));
+    });
+    const listNote = S.catalog === 'ready' ? `${(S.others.length + S.data.stocks.length).toLocaleString()} stocks` : S.catalog === 'failed' ? 'the main list only (the full list could not be loaded)' : 'the whole list (still loading)';
+
+    return (queueMicrotask(updateAlertCounts), h('div', { class: 'al' },
+      h('h2', null, 'Alerts'),
+      h('p', { class: 'muted' }, 'Get told when something happens to a stock you follow, or when a stock starts to match a rule of your own.'),
+      h('details', { class: 'al-how' }, h('summary', null, 'How alerts work'),
+        h('p', { class: 'muted small' }, 'Alerts are checked on this device each time the data refreshes (every 5 to 10 minutes) while the app is open. Your watchlist, switches and rules stay on this device and are never sent anywhere. For alerts when the app is closed, join the Telegram channel.'),
+        h('p', { class: 'muted small' }, S.notify ? 'Phone popups are on. Use the Alerts button at the top to turn them off.' : 'Phone popups are off, so alerts show here and as a message in the app. Use the Alerts button at the top to allow popups.')),
+
+      alSection('My rules', `Checked against ${listNote}. A rule alerts when a stock newly starts to match.`),
+      rules.length || AL_UI.draft ? rules : h('p', { class: 'muted small' }, 'No rules yet. A rule could be "RSI below 30 and price above the 200-day average".'),
+      AL_UI.draft ? ruleForm() : h('button', { type: 'button', class: 'btn', onclick: () => { AL_UI.draft = { name: 'My rule', mode: 'all', scope: { kind: 'ALL' }, conds: [blankCond('change_pct')] }; render(); } }, '+ New rule'),
+
+      alSection('Watchlist alerts'),
+      h('details', { class: 'card al-types', open: S.watch.size > 0 && onCount < Rules.TYPES.length },
+        h('summary', null, h('span', null, S.watch.size ? `${S.watch.size} stocks on your watchlist` : 'Your watchlist is empty'), h('span', { class: 'muted small' }, `${onCount} of ${Rules.TYPES.length} on`)),
+        h('p', { class: 'muted small' }, S.watch.size ? 'Choose what to be told about. Tap the star next to a stock to add or remove it.' : 'Tap the star next to a stock to add it. These alerts only cover stocks on your watchlist.'),
+        typeGroups.map((g) => h('div', { class: 'al-group' }, h('strong', null, g),
+          Rules.TYPES.filter((t) => t.group === g).map((t) => switchEl(AL.prefs[t.key], t.label, (e) => { AL.prefs[t.key] = e.target.checked; savePrefs(); })))),
+        h('div', { class: 'al-actions' }, h('button', { type: 'button', class: 'linkbtn', onclick: () => setAll(true) }, 'Turn all on'), h('button', { type: 'button', class: 'linkbtn', onclick: () => setAll(false) }, 'Turn all off'))),
+
+      alSection('Settings'),
+      backupCard(),
+
+      alSection('Triggered alerts'),
+      log.length ? [h('ul', { class: 'alertlog' }, log), h('div', { class: 'al-actions' }, h('button', { type: 'button', class: 'linkbtn danger', onclick: () => { AL.log = []; store.set('alertLog', []); render(); } }, 'Clear list'))]
+        : h('p', { class: 'muted small' }, 'Nothing yet. Alerts will appear here as they happen.')));
   }
 
   function setupNotifications() {
