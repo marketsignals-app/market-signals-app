@@ -2543,9 +2543,12 @@
     for (const b of document.querySelectorAll('.tabs button, .bottomnav button')) {
       if (b.dataset.tab === S.tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
     }
+    for (const current of document.querySelectorAll('.bottomnav [aria-current="page"], .tabs [aria-current="page"]')) {          // a bar that scrolls keeps the open tab in view
+      if (current.scrollIntoView) { try { current.scrollIntoView({ inline: 'center', block: 'nearest' }); } catch (e) { /* older browser */ } }
+    }
     const view = $('#view');
     if (!S.data) { view.replaceChildren(h('div', { class: 'empty' }, S.error || 'Loading...')); return; }
-    const builders = { signals: viewSignals, suggest: viewSuggest, news: viewNews, announcements: viewAnnouncements, alerts: viewAlerts, ipo: viewIpo, market: viewMarket, events: viewEvents, track: viewTrack };
+    const builders = { signals: viewSignals, suggest: viewSuggest, news: viewNews, announcements: viewAnnouncements, alerts: viewAlerts, rules: viewRules, ipo: viewIpo, market: viewMarket, events: viewEvents, track: viewTrack };
     view.replaceChildren((builders[S.tab] || viewSignals)());
     decorateHelp(view);
   }
@@ -2656,31 +2659,124 @@
   const switchEl = (checked, label, onchange) => h('label', { class: 'switch' }, h('input', { type: 'checkbox', checked, onchange }), h('span', { class: 'track', 'aria-hidden': 'true' }), h('span', { class: 'swtext' }, label));
   const alSection = (title, hint) => h('div', { class: 'al-sec' }, h('h3', null, title), hint ? h('p', { class: 'muted small' }, hint) : null);
 
+  /* ---------- the Rules tab: each rule and the stocks that fall under it ---------- */
+  const RULE_PRESETS = [
+    { name: 'Oversold in an uptrend', mode: 'all', scope: { kind: 'ALL' }, conds: [{ field: 'rsi', op: '<', value: 30 }, { field: 'vs_sma200', op: '>', value: 0 }] },
+    { name: 'Quality at a fair price', mode: 'all', scope: { kind: 'ALL' }, conds: [{ field: 'roe', op: '>', value: 15 }, { field: 'pe', op: '<', value: 25 }, { field: 'debt_equity', op: '<', value: 1 }] },
+    { name: 'Steady growers', mode: 'all', scope: { kind: 'ALL' }, conds: [{ field: 'rev_cagr3', op: '>', value: 10 }, { field: 'profit_cagr3', op: '>', value: 10 }, { field: 'profit_up_years', op: '>', value: 2 }] },
+    { name: 'Strong and near a 52-week high', mode: 'all', scope: { kind: 'ALL' }, conds: [{ field: 'from_high', op: '<', value: 5 }, { field: 'rs126', op: '>', value: 0 }] },
+    { name: 'Dividend payers', mode: 'all', scope: { kind: 'ALL' }, conds: [{ field: 'dividend_yield', op: '>', value: 3 }, { field: 'roe', op: '>', value: 10 }] },
+    { name: 'Heavy volume and rising', mode: 'all', scope: { kind: 'ALL' }, conds: [{ field: 'volume_ratio', op: '>', value: 2 }, { field: 'change_pct', op: '>', value: 3 }] },
+  ];
+  const RULES_UI = { sel: null, q: '', shown: 50, sort: null };
+  const rulesLoading = (rule) => Rules.needsDeep(rule) && S.extra !== 'ready' && S.extra !== 'failed' && S.others.length;
+
+  /* How a figure of a rule's field is written in the table. */
+  function fieldText(f, v) {
+    if (f.type === 'enum') return (f.options.find(([k]) => k === v) || [])[1] || String(v);
+    if (/\(%\)|%\)/.test(f.label)) return `${v.toFixed(1)}%`;
+    if (/Rs crore/.test(f.label)) return Math.round(v).toLocaleString('en-IN');
+    if (/points/.test(f.label)) return signed(v, 1, '');
+    return Math.abs(v) >= 100 ? Math.round(v).toLocaleString('en-IN') : v.toFixed(Math.abs(v) >= 10 ? 1 : 2);
+  }
+  const shortFieldLabel = (f) => f.label.replace(/\s*\(.*?\)\s*/g, ' ').replace(/,.*$/, '').replace(/, latest year/, '').trim();
+
+  function viewRules() {
+    const ctx = ruleContext();
+    if (RULES_UI.sel && !AL.rules.some((r) => r.id === RULES_UI.sel)) RULES_UI.sel = null;
+    if (!RULES_UI.sel && AL.rules.length) RULES_UI.sel = AL.rules[0].id;
+    const rule = AL.rules.find((r) => r.id === RULES_UI.sel) || null;
+    const listNote = S.catalog === 'ready' ? `${(S.others.length + S.data.stocks.length).toLocaleString()} stocks` : S.catalog === 'failed' ? 'the main list only (the full list could not be loaded)' : 'the whole list (still loading)';
+
+    const addPreset = (p) => {
+      if (AL.rules.length >= Rules.MAX_RULES) { toast(`You can keep up to ${Rules.MAX_RULES} rules.`); return; }
+      const made = Rules.clean({ ...p, id: newId() });
+      if (!made) return;
+      AL.rules.push(made); saveRules(); RULES_UI.sel = made.id; RULES_UI.shown = 50; RULES_UI.sort = null; checkAlerts(); render();
+    };
+    const newRule = () => { AL_UI.draft = { name: 'My rule', mode: 'all', scope: { kind: 'ALL' }, conds: [blankCond('change_pct')] }; render(); };
+
+    // the picker: one chip per rule with its count, and a chip to add one
+    const counts = new Map();
+    for (const r of AL.rules) { const res = rulesLoading(r) ? null : Rules.run(r, allStocks(), ctx); counts.set(r.id, res); }
+    const picker = h('div', { class: 'catchips rulepick', role: 'tablist', 'aria-label': 'Your rules' },
+      AL.rules.map((r) => h('button', { type: 'button', class: 'chip' + (r.id === RULES_UI.sel ? ' on' : ''), role: 'tab', 'aria-selected': String(r.id === RULES_UI.sel),
+        onclick: () => { RULES_UI.sel = r.id; RULES_UI.shown = 50; RULES_UI.sort = null; RULES_UI.q = ''; render(); } },
+        r.name, ' ', h('span', { class: 'n' }, counts.get(r.id) ? String(counts.get(r.id).matches.length) : '…'))),
+      h('button', { type: 'button', class: 'chip', onclick: newRule }, '+ New rule'));
+
+    const parts = [h('h2', null, 'Rules'),
+      h('p', { class: 'muted' }, `A rule is a set of conditions. Each one shows which stocks fall under it right now, checked against ${listNote}.`)];
+
+    if (!AL.rules.length && !AL_UI.draft) {
+      parts.push(h('div', { class: 'card al-rule' }, h('strong', null, 'No rules yet'), h('p', { class: 'al-desc' }, 'Start from an example, or build your own. Examples are screens on reported figures, not recommendations.'),
+        h('div', { class: 'presets' }, RULE_PRESETS.map((p) => h('div', { class: 'preset' }, h('strong', null, p.name), h('p', { class: 'small muted' }, Rules.describe(Rules.clean(p))),
+          h('button', { type: 'button', class: 'btn ghost', onclick: () => addPreset(p) }, 'Add'))))),
+        h('button', { type: 'button', class: 'btn', onclick: newRule }, '+ Build my own'));
+      return h('div', { class: 'al' }, ...parts);
+    }
+    parts.push(picker);
+    if (AL_UI.draft) parts.push(ruleForm());
+
+    if (rule && !AL_UI.draft) {
+      const res = counts.get(rule.id);
+      const fields = [...new Set(rule.conds.map((c) => c.field))].map((k) => FIELD_BY_KEY[k]).slice(0, 3);
+      const byKey = new Map(allStocks().map((s) => [s.symbol, s]));
+      const q = normText(RULES_UI.q);
+      let rows = res ? res.matches.map((sym) => byKey.get(sym)).filter(Boolean) : [];
+      if (q) rows = rows.filter((s) => `${normText(s.name)} ${normText(s.symbol)}`.includes(q));
+      const sortKey = RULES_UI.sort || { key: fields[0] ? fields[0].key : 'name', dir: fields[0] && rule.conds.find((c) => c.field === fields[0].key).op === '<' ? 1 : -1 };
+      const value = (s, key) => (key === 'name' ? s.name.toLowerCase() : key === 'price' ? s.price : key === 'chg' ? s.change_pct : (FIELD_BY_KEY[key].get(s, ctx)));
+      rows = rows.slice().sort((a, b) => {
+        const x = value(a, sortKey.key), y = value(b, sortKey.key);
+        if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1;
+        return (x < y ? -1 : x > y ? 1 : 0) * sortKey.dir;
+      });
+      const head = (key, label, num) => h('th', { class: num ? 'num' : '', 'aria-sort': sortKey.key === key ? (sortKey.dir === 1 ? 'ascending' : 'descending') : 'none' },
+        h('button', { type: 'button', class: 'sorth' + (sortKey.key === key ? ' on' : ''), onclick: () => { RULES_UI.sort = { key, dir: sortKey.key === key ? -sortKey.dir : (key === 'name' ? 1 : -1) }; render(); } }, label, sortKey.key === key ? (sortKey.dir === 1 ? ' ▲' : ' ▼') : ''));
+      const cell = (s, f) => { const v = f.get(s, ctx); return h('td', { class: 'num' }, v == null ? h('span', { class: 'na' }, 'n/a') : fieldText(f, v)); };
+      const visible = rows.slice(0, RULES_UI.shown);
+      const left = [res && res.noData ? `${res.noData} could not be checked for lack of data` : '', res && res.notApplicable ? `${res.notApplicable} banks and lenders skipped: this figure does not apply to them` : ''].filter(Boolean);
+
+      parts.push(h('div', { class: 'card al-rule' + (rule.on ? '' : ' off') },
+        h('div', { class: 'al-top' }, h('strong', null, rule.name), switchEl(rule.on, rule.on ? 'Alerts on' : 'Alerts off', (e) => { rule.on = e.target.checked; saveRules(); if (rule.on) delete AL.matched[rule.id]; checkAlerts(); render(); })),
+        h('p', { class: 'al-desc' }, Rules.describe(rule)),
+        h('p', { class: 'al-count' }, res ? `${res.matches.length} stocks fall under this rule now` + (left.length ? ` (${left.join('; ')})` : '') : 'Counting…'),
+        h('div', { class: 'al-actions' },
+          h('button', { type: 'button', class: 'linkbtn', onclick: () => { AL_UI.draft = JSON.parse(JSON.stringify(rule)); render(); } }, 'Edit'),
+          h('button', { type: 'button', class: 'linkbtn danger', onclick: () => {
+            if (!confirm(`Delete the rule "${rule.name}"?`)) return;
+            AL.rules = AL.rules.filter((x) => x.id !== rule.id); delete AL.matched[rule.id]; saveRules(); store.set('ruleMatched', AL.matched); RULES_UI.sel = null; render();
+          } }, 'Delete'))));
+
+      if (res && rule.conds.some((c) => (FIELD_BY_KEY[c.field] || {}).deep) && S.extra === 'failed') parts.push(h('p', { class: 'al-note' }, 'The detailed figures could not be loaded, so stocks that need them are counted as "could not be checked".'));
+      if (!res) {
+        loadExtra().then(() => { if (S.tab === 'rules') render(); });
+        parts.push(h('p', { class: 'muted small' }, 'Loading the figures for the whole list…'));
+      } else if (!res.matches.length) {
+        parts.push(h('div', { class: 'empty' }, 'No stock falls under this rule right now. It would alert you when one starts to.'));
+      } else {
+        parts.push(h('div', { class: 'row rulesearch' }, h('label', { class: 'field' }, h('span', null, 'Find in these stocks'),
+          h('input', { type: 'search', value: RULES_UI.q, placeholder: 'Name or symbol', oninput: (e) => { RULES_UI.q = e.target.value; RULES_UI.shown = 50; clearTimeout(RULES_UI.t); RULES_UI.t = setTimeout(() => { render(); const el = $('.rulesearch input'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }, 250); } })),
+          h('span', { class: 'muted small' }, `${rows.length} shown`)));
+        parts.push(h('div', { class: 'peerwrap' }, h('table', { class: 'peertable ruletable' },
+          h('thead', null, h('tr', null, head('name', 'Stock', false), head('price', 'Price', true), head('chg', 'Today', true), fields.map((f) => head(f.key, shortFieldLabel(f), true)), h('th', { class: 'hide-sm' }, 'Reading'))),
+          h('tbody', null, visible.map((s) => h('tr', { class: 'clickrow', onclick: (e) => openDetail(s.symbol, e.currentTarget) },
+            h('td', null, h('button', { type: 'button', class: 'linkbtn', onclick: (e) => { e.stopPropagation(); openDetail(s.symbol, e.currentTarget); } }, s.name), h('div', { class: 'muted small' }, s.symbol.replace(/\.NS$/, ''))),
+            h('td', { class: 'num' }, money(s.price, s.currency)), h('td', { class: 'num ' + (s.change_pct > 0 ? 'up' : s.change_pct < 0 ? 'down' : '') }, signed(s.change_pct, 2)),
+            fields.map((f) => cell(s, f)), h('td', { class: 'hide-sm' }, s.short && s.short.label ? badges(s, S.filters.horizon) : h('span', { class: 'muted small' }, 'not analysed'))))))));
+        if (rows.length > visible.length) parts.push(h('button', { type: 'button', class: 'btn ghost', onclick: () => { RULES_UI.shown += 50; render(); } }, `Show 50 more (${rows.length - visible.length} left)`));
+      }
+      parts.push(h('p', { class: 'muted small' }, 'These are the stocks whose reported figures fit the conditions today. That is not a recommendation to buy or sell. Rule figures that need detailed data cover only the stocks analysed in depth.'));
+    }
+    return h('div', { class: 'al' }, ...parts);
+  }
+
   function viewAlerts() {
     const typeGroups = [...new Set(Rules.TYPES.map((t) => t.group))];
     const onCount = Rules.TYPES.filter((t) => AL.prefs[t.key]).length;
     const setAll = (on) => { Rules.TYPES.forEach((t) => { AL.prefs[t.key] = on; }); savePrefs(); render(); };
     const known = (symbol) => S.data.stocks.some((s) => s.symbol === symbol) || S.others.some((s) => s.symbol === symbol);
-    const deepWaiting = (rule) => Rules.needsDeep(rule) && S.extra !== 'ready' && S.extra !== 'failed' && S.others.length;
-
-    const rules = AL.rules.map((rule) => {
-      const open = AL_UI.open.has(rule.id);
-      const result = open && !deepWaiting(rule) ? Rules.run(rule, allStocks(), ruleContext()) : null;
-      return h('div', { class: 'card al-rule' + (rule.on ? '' : ' off') },
-        h('div', { class: 'al-top' }, h('strong', null, rule.name), switchEl(rule.on, rule.on ? 'On' : 'Off', (e) => { rule.on = e.target.checked; saveRules(); if (rule.on) delete AL.matched[rule.id]; checkAlerts(); render(); })),
-        h('p', { class: 'al-desc' }, Rules.describe(rule)),
-        h('p', { class: 'al-count', 'data-rule-count': rule.id }, 'Counting...'),
-        h('div', { class: 'al-actions' },
-          h('button', { type: 'button', class: 'linkbtn', onclick: () => { if (open) AL_UI.open.delete(rule.id); else AL_UI.open.add(rule.id); render(); } }, open ? 'Hide matches' : 'Show matches'),
-          h('button', { type: 'button', class: 'linkbtn', onclick: () => { AL_UI.draft = JSON.parse(JSON.stringify(rule)); render(); } }, 'Edit'),
-          h('button', { type: 'button', class: 'linkbtn danger', onclick: () => {
-            if (!confirm(`Delete the rule "${rule.name}"?`)) return;
-            AL.rules = AL.rules.filter((x) => x.id !== rule.id); delete AL.matched[rule.id]; saveRules(); store.set('ruleMatched', AL.matched); render();
-          } }, 'Delete')),
-        result ? h('div', { class: 'chips-row al-matches' },
-          result.matches.slice(0, 40).map((sym) => h('button', { type: 'button', class: 'chip', onclick: (e) => openDetail(sym, e.currentTarget) }, nameOf(sym))),
-          result.matches.length > 40 ? h('span', { class: 'muted small' }, `and ${result.matches.length - 40} more`) : (result.matches.length ? null : h('span', { class: 'muted small' }, 'No stock matches right now.'))) : null);
-    });
 
     const log = AL.log.slice(0, 30).map((e) => {
       const t = istParts(e.ts);
@@ -2699,9 +2795,10 @@
         h('p', { class: 'muted small' }, 'Alerts are checked on this device each time the data refreshes (every 5 to 10 minutes) while the app is open. Your watchlist, switches and rules stay on this device and are never sent anywhere. For alerts when the app is closed, join the Telegram channel.'),
         h('p', { class: 'muted small' }, S.notify ? 'Phone popups are on. Use the Alerts button at the top to turn them off.' : 'Phone popups are off, so alerts show here and as a message in the app. Use the Alerts button at the top to allow popups.')),
 
-      alSection('My rules', `Checked against ${listNote}. A rule alerts when a stock newly starts to match. Figures such as RSI, margins, growth, debt and beta exist only for stocks analysed in depth; the rest are counted as "could not be checked", never guessed.`),
-      rules.length || AL_UI.draft ? rules : h('p', { class: 'muted small' }, 'No rules yet. A rule could be "RSI below 30 and price above the 200-day average".'),
-      AL_UI.draft ? ruleForm() : h('button', { type: 'button', class: 'btn', onclick: () => { AL_UI.draft = { name: 'My rule', mode: 'all', scope: { kind: 'ALL' }, conds: [blankCond('change_pct')] }; render(); } }, '+ New rule'),
+      alSection('My rules'),
+      h('div', { class: 'card al-rule' }, h('div', { class: 'al-top' }, h('strong', null, AL.rules.length ? `${AL.rules.length} rule${AL.rules.length === 1 ? '' : 's'}, ${AL.rules.filter((r) => r.on).length} sending alerts` : 'No rules yet'),
+        h('button', { type: 'button', class: 'btn ghost', onclick: () => { S.tab = 'rules'; render(); } }, 'Open Rules')),
+        h('p', { class: 'muted small' }, `A rule alerts when a stock newly starts to match it. Build rules, switch their alerts on or off and see which stocks fall under each one in the Rules tab.${listNote ? ` Checked against ${listNote}.` : ''}`)),
 
       alSection('Watchlist alerts'),
       h('details', { class: 'card al-types', open: S.watch.size > 0 && onCount < Rules.TYPES.length },
