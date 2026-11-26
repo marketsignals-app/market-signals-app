@@ -1,1 +1,1 @@
-{"v":1,"at":"2026-11-26T11:58:02+00:00","model":"openai/gpt-4o-mini","read":7407,"worth_scoring":283,"already_scored":0,"attempted":150,"scored":0,"outcome":"stopped: JSONDecodeError","error":"JSONDecodeError"}
+{"v":1,"at":"2026-11-26T21:22:28+00:00","model":"openai/gpt-4o-mini","read":608,"worth_scoring":173,"already_scored":0,"attempted":150,"scored":0,"outcome":"stopped: JSONDecodeError","error":"JSONDecodeError"}
