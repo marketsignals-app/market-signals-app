@@ -349,7 +349,7 @@
   /* ---------- shared pieces ---------- */
   function newsList(items, withTopic) {
     if (!items || !items.length) return h('p', { class: 'muted small' }, 'No recent headlines found.');
-    return h('ul', { class: 'clean' }, items.map((item) => {
+    return h('ul', { class: 'clean multicol' }, items.map((item) => {
       const url = safeUrl(item.link);
       const title = url ? h('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, item.title) : item.title;
       return h('li', null,
@@ -1242,7 +1242,7 @@
         if (!days.length || days[days.length - 1].day !== day) days.push({ day, rows: [] });
         days[days.length - 1].rows.push(r);
       }
-      list.replaceChildren(...(days.length ? days.map((g) => h('div', { class: 'card' }, h('h4', { style: 'margin:0 0 4px' }, g.day), h('ul', { class: 'clean' }, g.rows.map((r) => annRow(r, mainSymbols)))))
+      list.replaceChildren(...(days.length ? days.map((g) => h('div', { class: 'card' }, h('h4', { style: 'margin:0 0 4px' }, g.day), h('ul', { class: 'clean multicol' }, g.rows.map((r) => annRow(r, mainSymbols)))))
         : [h('div', { class: 'empty' }, 'No event matches these filters.')]));
     };
     const sel = (label, key, options) => h('label', { class: 'field' }, label, h('select', { onchange: (e) => { f[key] = e.target.value; if (key === 'group') f.type = 'ALL'; render(); } },
@@ -1272,7 +1272,7 @@
     if (!d) return h('div', null, h('h2', null, 'News'), h('div', { class: 'empty' }, 'News intelligence is not available in this data yet. It appears after the next update.'));
     const nf = S.newsFilters;
     const sectors = [...new Set((d.stories || []).map((x) => x.sector).filter(Boolean))].sort();
-    const list = h('ul', { class: 'clean' });
+    const list = h('ul', { class: 'clean multicol' });
     const status = h('p', { class: 'muted small' });
     const draw = () => {
       const q = nf.q.trim().toLowerCase();
@@ -1843,7 +1843,7 @@
 
   function viewSuggest() {
     const p = S.profile;
-    const results = h('div');
+    const results = h('div', { class: 'cardgrid' });
     const draw = () => {
       store.set('profile', S.profile);
       const picks = suggestions();
@@ -2405,11 +2405,11 @@
       markets.length ? h('div', { class: 'grid' }, markets.map((k) => conditionsCard(k, conditions[k]))) : null,
       markets.length ? h('p', { class: 'muted small' }, 'Seven simple checks on the main index, each worth +1, 0 or −1. They describe how the market is behaving now. They are not a forecast and not a call on any stock.') : null,
       h('h2', null, 'Indexes and global cues ', src('DELAYED')),
-      h('div', { class: 'grid' }, cards.length ? cards : h('div', { class: 'empty' }, 'Market data unavailable.')),
+      h('div', { class: 'grid tiles' }, cards.length ? cards : h('div', { class: 'empty' }, 'Market data unavailable.')),
       h('p', { class: 'muted small' }, 'Uptrend means the index is above its 50 and 200-day averages. A fearful VIX (above 25) means large swings: use smaller positions.'),
       markets.some((k) => conditions[k].breadth) ? [h('h2', null, 'Breadth and sectors'),
         h('div', { class: 'grid' }, markets.map((k) => [breadthCard(k, conditions[k]), sectorCard(k, conditions[k])]))] : null,
-      (S.data.alerts || []).length ? [h('h2', null, 'Recent alerts'), h('div', { class: 'card' }, h('ul', { class: 'clean' },
+      (S.data.alerts || []).length ? [h('h2', null, 'Recent alerts'), h('div', { class: 'card' }, h('ul', { class: 'clean multicol' },
         [...S.data.alerts].reverse().map((a) => h('li', null, h('span', { style: 'white-space:pre-line' }, a.text),
           h('div', { class: 'muted small' }, ago(Math.max(0, Math.round((Date.now() / 1000 - a.ts) / 60))), ' ',
             a.symbol && (S.data.stocks.some((s) => s.symbol === a.symbol) || S.others.some((s) => s.symbol === a.symbol)) ? h('button', { type: 'button', class: 'chip', onclick: (e) => openDetail(a.symbol, e.currentTarget) }, 'View analysis') : null)))))] : null,
@@ -2659,6 +2659,35 @@
   const switchEl = (checked, label, onchange) => h('label', { class: 'switch' }, h('input', { type: 'checkbox', checked, onchange }), h('span', { class: 'track', 'aria-hidden': 'true' }), h('span', { class: 'swtext' }, label));
   const alSection = (title, hint) => h('div', { class: 'al-sec' }, h('h3', null, title), hint ? h('p', { class: 'muted small' }, hint) : null);
 
+  /* Export: a file download (a Blob), or the text on the clipboard when the browser will not download. */
+  function saveFile(name, text, type) {
+    try {
+      const url = URL.createObjectURL(new Blob([text], { type }));
+      const link = h('a', { href: url, download: name });
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      toast(`Saved ${name}`);
+    } catch (e) {
+      if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => toast('Could not save a file here, so it was copied instead.'), () => toast('Could not save or copy.'));
+      else toast('Could not save a file in this browser.');
+    }
+  }
+  const fileSafe = (text) => String(text).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'rule';
+  function exportRules() {
+    const body = { app: 'Stock Signals', kind: 'rules', v: 1, exported: new Date().toISOString(),
+      rules: AL.rules.map((r) => ({ name: r.name, on: r.on, mode: r.mode, scope: r.scope, conds: r.conds, description: Rules.describe(r) })) };
+    saveFile(`stock-signals-rules-${todayIso()}.json`, JSON.stringify(body, null, 2), 'application/json');
+  }
+  function exportMatches(rule, stocks, fields, ctx) {
+    const head = ['Symbol', 'Name', 'Price', 'Change today %'].concat(fields.map((f) => f.label));
+    const lines = [head.map(csvCell).join(',')];
+    const tidy = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 10000) / 10000 : v);
+    for (const s of stocks) lines.push([s.symbol, s.name, s.price, s.change_pct].concat(fields.map((f) => f.get(s, ctx))).map((v) => csvCell(tidy(v))).join(','));
+    saveFile(`stock-signals-${fileSafe(rule.name)}-${todayIso()}.csv`, '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
+  }
+
   /* ---------- the Rules tab: each rule and the stocks that fall under it ---------- */
   const RULE_PRESETS = [
     { name: 'Oversold in an uptrend', mode: 'all', scope: { kind: 'ALL' }, conds: [{ field: 'rsi', op: '<', value: 30 }, { field: 'vs_sma200', op: '>', value: 0 }] },
@@ -2668,7 +2697,7 @@
     { name: 'Dividend payers', mode: 'all', scope: { kind: 'ALL' }, conds: [{ field: 'dividend_yield', op: '>', value: 3 }, { field: 'roe', op: '>', value: 10 }] },
     { name: 'Heavy volume and rising', mode: 'all', scope: { kind: 'ALL' }, conds: [{ field: 'volume_ratio', op: '>', value: 2 }, { field: 'change_pct', op: '>', value: 3 }] },
   ];
-  const RULES_UI = { sel: null, q: '', shown: 50, sort: null };
+  const RULES_UI = { sel: null, q: '', sort: null };
   const rulesLoading = (rule) => Rules.needsDeep(rule) && S.extra !== 'ready' && S.extra !== 'failed' && S.others.length;
 
   /* How a figure of a rule's field is written in the table. */
@@ -2681,6 +2710,12 @@
   }
   const shortFieldLabel = (f) => f.label.replace(/\s*\(.*?\)\s*/g, ' ').replace(/,.*$/, '').replace(/, latest year/, '').trim();
 
+  const FIELD_SHORT = { change_pct: 'Change', price: 'Price', from_high: 'Below high', from_low: 'Above low', volume_ratio: 'Volume x', cap_cr: 'Cap Rs cr', pe: 'P/E', pb: 'P/B', dividend_yield: 'Yield',
+    score_short: 'Weeks score', score_long: 'Months score', rsi: 'RSI', vs_sma20: 'vs 20-day', vs_sma50: 'vs 50-day', vs_sma200: 'vs 200-day', momentum: '6-month', swing: 'Swing',
+    roe: 'ROE', roa: 'ROA', op_margin: 'Op. margin', gross_margin: 'Gross margin', roce: 'ROCE', rev_cagr3: 'Revenue 3y', profit_cagr3: 'Profit 3y', eps_cagr3: 'EPS 3y', op_growth: 'Op. profit',
+    profit_up_years: 'Profit up yrs', ocf_profit: 'Cash/profit', fcf_cr: 'FCF Rs cr', debt_equity: 'Debt/equity', debt_ebitda: 'Debt/EBITDA', current_ratio: 'Current ratio', peg: 'PEG',
+    ev_ebitda: 'EV/EBITDA', price_fcf: 'P/FCF', earn_yield: 'Earn. yield', pe_vs_sector: 'P/E vs sector', sma_cross: '50 vs 200-day', adx: 'ADX', rs126: 'vs index', beta: 'Beta',
+    worst_fall: 'Worst fall', reading_short: 'Weeks', reading_long: 'Months', reading_both: 'Both views', macd: 'MACD', pressure: 'Pressure', market: 'Market' };
   function viewRules() {
     const ctx = ruleContext();
     if (RULES_UI.sel && !AL.rules.some((r) => r.id === RULES_UI.sel)) RULES_UI.sel = null;
@@ -2692,7 +2727,7 @@
       if (AL.rules.length >= Rules.MAX_RULES) { toast(`You can keep up to ${Rules.MAX_RULES} rules.`); return; }
       const made = Rules.clean({ ...p, id: newId() });
       if (!made) return;
-      AL.rules.push(made); saveRules(); RULES_UI.sel = made.id; RULES_UI.shown = 50; RULES_UI.sort = null; checkAlerts(); render();
+      AL.rules.push(made); saveRules(); RULES_UI.sel = made.id; RULES_UI.sort = null; checkAlerts(); render();
     };
     const newRule = () => { AL_UI.draft = { name: 'My rule', mode: 'all', scope: { kind: 'ALL' }, conds: [blankCond('change_pct')] }; render(); };
 
@@ -2701,7 +2736,7 @@
     for (const r of AL.rules) { const res = rulesLoading(r) ? null : Rules.run(r, allStocks(), ctx); counts.set(r.id, res); }
     const picker = h('div', { class: 'catchips rulepick', role: 'tablist', 'aria-label': 'Your rules' },
       AL.rules.map((r) => h('button', { type: 'button', class: 'chip' + (r.id === RULES_UI.sel ? ' on' : ''), role: 'tab', 'aria-selected': String(r.id === RULES_UI.sel),
-        onclick: () => { RULES_UI.sel = r.id; RULES_UI.shown = 50; RULES_UI.sort = null; RULES_UI.q = ''; render(); } },
+        onclick: () => { RULES_UI.sel = r.id; RULES_UI.sort = null; RULES_UI.q = ''; render(); } },
         r.name, ' ', h('span', { class: 'n' }, counts.get(r.id) ? String(counts.get(r.id).matches.length) : '…'))),
       h('button', { type: 'button', class: 'chip', onclick: newRule }, '+ New rule'));
 
@@ -2713,7 +2748,7 @@
         h('div', { class: 'presets' }, RULE_PRESETS.map((p) => h('div', { class: 'preset' }, h('strong', null, p.name), h('p', { class: 'small muted' }, Rules.describe(Rules.clean(p))),
           h('button', { type: 'button', class: 'btn ghost', onclick: () => addPreset(p) }, 'Add'))))),
         h('button', { type: 'button', class: 'btn', onclick: newRule }, '+ Build my own'));
-      return h('div', { class: 'al' }, ...parts);
+      return h('div', { class: 'al rulespage' }, ...parts);
     }
     parts.push(picker);
     if (AL_UI.draft) parts.push(ruleForm());
@@ -2732,10 +2767,7 @@
         if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1;
         return (x < y ? -1 : x > y ? 1 : 0) * sortKey.dir;
       });
-      const head = (key, label, num) => h('th', { class: num ? 'num' : '', 'aria-sort': sortKey.key === key ? (sortKey.dir === 1 ? 'ascending' : 'descending') : 'none' },
-        h('button', { type: 'button', class: 'sorth' + (sortKey.key === key ? ' on' : ''), onclick: () => { RULES_UI.sort = { key, dir: sortKey.key === key ? -sortKey.dir : (key === 'name' ? 1 : -1) }; render(); } }, label, sortKey.key === key ? (sortKey.dir === 1 ? ' ▲' : ' ▼') : ''));
-      const cell = (s, f) => { const v = f.get(s, ctx); return h('td', { class: 'num' }, v == null ? h('span', { class: 'na' }, 'n/a') : fieldText(f, v)); };
-      const visible = rows.slice(0, RULES_UI.shown);
+      const visible = rows;                                  // every stock that falls under the rule is listed, however many
       const left = [res && res.noData ? `${res.noData} could not be checked for lack of data` : '', res && res.notApplicable ? `${res.notApplicable} banks and lenders skipped: this figure does not apply to them` : ''].filter(Boolean);
 
       parts.push(h('div', { class: 'card al-rule' + (rule.on ? '' : ' off') },
@@ -2744,6 +2776,8 @@
         h('p', { class: 'al-count' }, res ? `${res.matches.length} stocks fall under this rule now` + (left.length ? ` (${left.join('; ')})` : '') : 'Counting…'),
         h('div', { class: 'al-actions' },
           h('button', { type: 'button', class: 'linkbtn', onclick: () => { AL_UI.draft = JSON.parse(JSON.stringify(rule)); render(); } }, 'Edit'),
+          h('button', { type: 'button', class: 'linkbtn', disabled: !rows.length, title: 'Download the stocks listed below, with the figures of the rule, as a spreadsheet file', onclick: () => exportMatches(rule, rows, fields, ctx) }, 'Export list (CSV)'),
+          h('button', { type: 'button', class: 'linkbtn', title: 'Download all your rules as a file', onclick: exportRules }, 'Export rules'),
           h('button', { type: 'button', class: 'linkbtn danger', onclick: () => {
             if (!confirm(`Delete the rule "${rule.name}"?`)) return;
             AL.rules = AL.rules.filter((x) => x.id !== rule.id); delete AL.matched[rule.id]; saveRules(); store.set('ruleMatched', AL.matched); RULES_UI.sel = null; render();
@@ -2756,20 +2790,25 @@
       } else if (!res.matches.length) {
         parts.push(h('div', { class: 'empty' }, 'No stock falls under this rule right now. It would alert you when one starts to.'));
       } else {
-        parts.push(h('div', { class: 'row rulesearch' }, h('label', { class: 'field' }, h('span', null, 'Find in these stocks'),
-          h('input', { type: 'search', value: RULES_UI.q, placeholder: 'Name or symbol', oninput: (e) => { RULES_UI.q = e.target.value; RULES_UI.shown = 50; clearTimeout(RULES_UI.t); RULES_UI.t = setTimeout(() => { render(); const el = $('.rulesearch input'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }, 250); } })),
-          h('span', { class: 'muted small' }, `${rows.length} shown`)));
-        parts.push(h('div', { class: 'peerwrap' }, h('table', { class: 'peertable ruletable' },
-          h('thead', null, h('tr', null, head('name', 'Stock', false), head('price', 'Price', true), head('chg', 'Today', true), fields.map((f) => head(f.key, shortFieldLabel(f), true)), h('th', { class: 'hide-sm' }, 'Reading'))),
-          h('tbody', null, visible.map((s) => h('tr', { class: 'clickrow', onclick: (e) => openDetail(s.symbol, e.currentTarget) },
-            h('td', null, h('button', { type: 'button', class: 'linkbtn', onclick: (e) => { e.stopPropagation(); openDetail(s.symbol, e.currentTarget); } }, s.name), h('div', { class: 'muted small' }, s.symbol.replace(/\.NS$/, ''))),
-            h('td', { class: 'num' }, money(s.price, s.currency)), h('td', { class: 'num ' + (s.change_pct > 0 ? 'up' : s.change_pct < 0 ? 'down' : '') }, signed(s.change_pct, 2)),
-            fields.map((f) => cell(s, f)), h('td', { class: 'hide-sm' }, s.short && s.short.label ? badges(s, S.filters.horizon) : h('span', { class: 'muted small' }, 'not analysed'))))))));
-        if (rows.length > visible.length) parts.push(h('button', { type: 'button', class: 'btn ghost', onclick: () => { RULES_UI.shown += 50; render(); } }, `Show 50 more (${rows.length - visible.length} left)`));
+        const searchBar = h('div', { class: 'row rulesearch' }, h('label', { class: 'field' }, h('span', null, 'Find in these stocks'),
+          h('input', { type: 'search', value: RULES_UI.q, placeholder: 'Name or symbol', oninput: (e) => { RULES_UI.q = e.target.value; clearTimeout(RULES_UI.t); RULES_UI.t = setTimeout(() => { render(); const el = $('.rulesearch input'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }, 250); } })),
+          h('span', { class: 'muted small' }, `${rows.length.toLocaleString()} stocks`));
+        const figFields = fields.filter((f) => f.key !== 'price' && f.key !== 'change_pct');          // the price and today's change are already on the line above
+        const choices = [['name', 'Name'], ['price', 'Price'], ['chg', 'Change today']].concat(fields.map((f) => [f.key, FIELD_SHORT[f.key] || shortFieldLabel(f)]));
+        const sortBar = h('div', { class: 'row rulesort' },
+          h('label', { class: 'field' }, h('span', null, 'Sort by'), h('select', { onchange: (e) => { RULES_UI.sort = { key: e.target.value, dir: e.target.value === 'name' ? 1 : -1 }; render(); } },
+            choices.map(([k, label]) => h('option', { value: k, selected: k === sortKey.key }, label)))),
+          h('button', { type: 'button', class: 'btn ghost', 'aria-label': sortKey.dir === 1 ? 'Ascending: tap for descending' : 'Descending: tap for ascending',
+            onclick: () => { RULES_UI.sort = { key: sortKey.key, dir: -sortKey.dir }; render(); } }, sortKey.dir === 1 ? '▲ Low to high' : '▼ High to low'));
+        parts.push(h('div', { class: 'rulectl' }, searchBar, sortBar));
+        parts.push(h('ul', { class: 'rlist', 'aria-label': `Stocks that fall under ${rule.name}` }, visible.map((s) => h('li', null, h('button', { type: 'button', class: 'rstock', onclick: (e) => openDetail(s.symbol, e.currentTarget) },
+          h('span', { class: 'rname' }, s.name),
+          h('span', { class: 'rline small' }, h('span', { class: 'muted' }, s.symbol.replace(/\.NS$/, '')), h('b', null, money(s.price, s.currency)), h('span', { class: s.change_pct > 0 ? 'up' : s.change_pct < 0 ? 'down' : 'muted' }, signed(s.change_pct, 2))),
+          figFields.length ? h('span', { class: 'rfigs small' }, figFields.map((f) => { const v = f.get(s, ctx); return h('span', null, `${FIELD_SHORT[f.key] || shortFieldLabel(f)} `, v == null ? h('span', { class: 'na' }, 'n/a') : h('b', null, fieldText(f, v))); })) : null)))));
       }
-      parts.push(h('p', { class: 'muted small' }, 'These are the stocks whose reported figures fit the conditions today. That is not a recommendation to buy or sell. Rule figures that need detailed data cover only the stocks analysed in depth.'));
+      parts.push(h('p', { class: 'muted small rnote' }, 'These are the stocks whose reported figures fit the conditions today. That is not a recommendation to buy or sell. Rule figures that need detailed data cover only the stocks analysed in depth.'));
     }
-    return h('div', { class: 'al' }, ...parts);
+    return h('div', { class: 'al rulespage' }, ...parts);
   }
 
   function viewAlerts() {
@@ -2788,32 +2827,30 @@
     });
     const listNote = S.catalog === 'ready' ? `${(S.others.length + S.data.stocks.length).toLocaleString()} stocks` : S.catalog === 'failed' ? 'the main list only (the full list could not be loaded)' : 'the whole list (still loading)';
 
-    return (queueMicrotask(updateAlertCounts), h('div', { class: 'al' },
+    return (queueMicrotask(updateAlertCounts), h('div', { class: 'al alwide' },
       h('h2', null, 'Alerts'),
       h('p', { class: 'muted' }, 'Get told when something happens to a stock you follow, or when a stock starts to match a rule of your own.'),
       h('details', { class: 'al-how' }, h('summary', null, 'How alerts work'),
-        h('p', { class: 'muted small' }, 'Alerts are checked on this device each time the data refreshes (every 5 to 10 minutes) while the app is open. Your watchlist, switches and rules stay on this device and are never sent anywhere. For alerts when the app is closed, join the Telegram channel.'),
+        h('p', { class: 'muted small' }, 'Alerts are checked on this device each time the data refreshes (every 5 to 10 minutes), and only while the app is open: a phone pauses an app that is closed or in the background, so nothing can notify you then. Your watchlist, switches and rules stay on this device and are never sent anywhere. For alerts when the app is closed, join the Telegram channel.'),
         h('p', { class: 'muted small' }, S.notify ? 'Phone popups are on. Use the Alerts button at the top to turn them off.' : 'Phone popups are off, so alerts show here and as a message in the app. Use the Alerts button at the top to allow popups.')),
 
-      alSection('My rules'),
+      h('div', { class: 'alblocks' },
+      h('div', { class: 'alblock' }, alSection('My rules'),
       h('div', { class: 'card al-rule' }, h('div', { class: 'al-top' }, h('strong', null, AL.rules.length ? `${AL.rules.length} rule${AL.rules.length === 1 ? '' : 's'}, ${AL.rules.filter((r) => r.on).length} sending alerts` : 'No rules yet'),
         h('button', { type: 'button', class: 'btn ghost', onclick: () => { S.tab = 'rules'; render(); } }, 'Open Rules')),
-        h('p', { class: 'muted small' }, `A rule alerts when a stock newly starts to match it. Build rules, switch their alerts on or off and see which stocks fall under each one in the Rules tab.${listNote ? ` Checked against ${listNote}.` : ''}`)),
-
-      alSection('Watchlist alerts'),
+        h('p', { class: 'muted small' }, `A rule alerts when a stock newly starts to match it. Build rules, switch their alerts on or off and see which stocks fall under each one in the Rules tab.${listNote ? ` Checked against ${listNote}.` : ''}`))),
+      h('div', { class: 'alblock' }, alSection('Watchlist alerts'),
       h('details', { class: 'card al-types', open: S.watch.size > 0 && onCount < Rules.TYPES.length },
         h('summary', null, h('span', null, S.watch.size ? `${S.watch.size} stocks on your watchlist` : 'Your watchlist is empty'), h('span', { class: 'muted small' }, `${onCount} of ${Rules.TYPES.length} on`)),
         h('p', { class: 'muted small' }, S.watch.size ? 'Choose what to be told about. Tap the star next to a stock to add or remove it.' : 'Tap the star next to a stock to add it. These alerts only cover stocks on your watchlist.'),
         typeGroups.map((g) => h('div', { class: 'al-group' }, h('strong', null, g),
           Rules.TYPES.filter((t) => t.group === g).map((t) => switchEl(AL.prefs[t.key], t.label, (e) => { AL.prefs[t.key] = e.target.checked; savePrefs(); })))),
-        h('div', { class: 'al-actions' }, h('button', { type: 'button', class: 'linkbtn', onclick: () => setAll(true) }, 'Turn all on'), h('button', { type: 'button', class: 'linkbtn', onclick: () => setAll(false) }, 'Turn all off'))),
+        h('div', { class: 'al-actions' }, h('button', { type: 'button', class: 'linkbtn', onclick: () => setAll(true) }, 'Turn all on'), h('button', { type: 'button', class: 'linkbtn', onclick: () => setAll(false) }, 'Turn all off')))),
+      h('div', { class: 'alblock' }, alSection('Settings'), backupCard()),
 
-      alSection('Settings'),
-      backupCard(),
-
-      alSection('Triggered alerts'),
+      h('div', { class: 'alblock alfull' }, alSection('Triggered alerts'),
       log.length ? [h('ul', { class: 'alertlog' }, log), h('div', { class: 'al-actions' }, h('button', { type: 'button', class: 'linkbtn danger', onclick: () => { AL.log = []; store.set('alertLog', []); render(); } }, 'Clear list'))]
-        : h('p', { class: 'muted small' }, 'Nothing yet. Alerts will appear here as they happen.')));
+        : h('p', { class: 'muted small' }, 'Nothing yet. Alerts will appear here as they happen.')))));
   }
 
   function setupUpdateNotice() {

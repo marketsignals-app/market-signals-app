@@ -559,3 +559,55 @@ a.iconbtn.tg { color: var(--accent); }
 
 @media (min-width: 721px) and (max-width: 1100px) { .top .tabs { order: 3; flex-basis: 100%; } }
 @media (min-width: 721px) and (max-width: 1000px) { .tabs button { padding: 8px 8px; font-size: 13px; } }
+
+/* Rules tab: the page is as wide as the screen; the rule keeps a readable width and the stocks run down the page in 1 to 5 columns (newspaper style: down the first column, then the next) */
+.al.rulespage { max-width: none; }
+.rulespage > h2, .rulespage > p, .rulespage > .card, .rulespage > .al-note, .rulespage > .empty { max-width: 760px; }
+.rulesort { align-items: end; gap: 10px; margin: 6px 0 10px; }
+.rulesort select { min-width: 150px; }
+.rlist { list-style: none; margin: 0 0 12px; padding: 0; column-count: 1; column-gap: 16px; column-rule: 1px solid var(--line); }
+.rlist li { break-inside: avoid; margin: 0; }
+.rstock { width: 100%; display: grid; gap: 1px; text-align: left; padding: 7px 4px; background: none; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; color: inherit; font: inherit; cursor: pointer; }
+.rstock:hover, .rstock:focus-visible { background: var(--accent-bg); }
+.rname { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rline { display: flex; gap: 8px; align-items: baseline; font-variant-numeric: tabular-nums; }
+.rline > :first-child { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.rfigs { display: flex; flex-wrap: wrap; gap: 0 10px; color: var(--muted); }
+.rfigs b { color: var(--text); font-variant-numeric: tabular-nums; }
+.rstock .up { color: var(--buy); } .rstock .down { color: var(--sell); }
+@media (min-width: 340px) { .rlist { column-count: 2; } }
+@media (min-width: 561px) { .rlist { column-count: 3; } }
+@media (min-width: 901px) { .rlist { column-count: 4; } }
+@media (min-width: 1700px) { .rlist { column-count: 5; } }
+
+.rulectl { display: flex; flex-wrap: wrap; gap: 6px 20px; align-items: end; margin: 4px 0 10px; }
+.rulectl .row { margin: 0; }
+.rulesearch label { flex: 1 1 200px; }
+
+/* Use the width: long lists flow into as many columns as fit, cards sit side by side, and a one-card section becomes one row */
+ul.clean.multicol { column-width: 300px; column-gap: 24px; column-rule: 1px solid var(--line); }
+ul.clean.multicol > li { break-inside: avoid; }
+.cardgrid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); align-items: start; }
+.cardgrid > .empty { grid-column: 1 / -1; }
+.grid.tiles { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+.al.alwide { max-width: none; }
+.alwide > h2, .alwide > p, .alwide > .al-how { max-width: 760px; }
+.alblocks { display: grid; gap: 0 20px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); align-items: start; }
+.alblock { min-width: 0; }
+.alblock.alfull { grid-column: 1 / -1; }
+.alertlog { column-width: 340px; column-gap: 24px; column-rule: 1px solid var(--line); }
+.alertlog li { break-inside: avoid; }
+@media (max-width: 520px) { .grid.tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } .grid.tiles > .card { padding: 8px 10px; } .cardgrid { grid-template-columns: minmax(0, 1fr); } }
+@media (min-width: 720px) {
+  .rulespage > .card.al-rule { max-width: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 24px; padding: 10px 14px; }
+  .rulespage > .card.al-rule > .al-top { flex: 0 0 auto; gap: 14px; }
+  .rulespage > .card.al-rule > .al-desc { flex: 1 1 300px; }
+  .rulespage > .card.al-rule > .al-count, .rulespage > .card.al-rule > .al-actions { flex: 0 0 auto; margin: 0; }
+}
+
+@media (max-width: 520px) {
+  ul.clean li { padding: 2px 0; }
+  .newsstory .small { font-size: 12px; line-height: 1.35; }
+  .newsstory { padding-top: 4px; padding-bottom: 4px; }
+}
+.alertlog { display: block; }
