@@ -152,3 +152,22 @@ test('sector medians need four stocks and ignore losses and the unclassified', (
   assert.equal(R.test({ field: 'pe_vs_sector', op: '>', value: 1.9 }, s, { sectorPE: medians }), true);
   assert.equal(R.test({ field: 'pe_vs_sector', op: '>', value: 1 }, s, {}), null);
 });
+
+test('a P/E under 2 and a return on equity over 100% are treated as no figure', () => {
+  const t = (field, op, value, fundamentals) => R.test({ field, op, value }, stock('A.NS', { fundamentals }), { sectorPE: { IT: 20 } });
+  assert.equal(t('pe', '<', 25, { pe: 0.53 }), null, 'a P/E of 0.53 is a distortion, not a bargain');
+  assert.equal(t('pe', '<', 25, { pe: 1.99 }), null);
+  assert.equal(t('pe', '<', 25, { pe: 2 }), true, 'the limit itself is allowed');
+  assert.equal(t('roe', '>', 15, { roe: 1.15 }), null, 'an ROE of 115% is a distortion');
+  assert.equal(t('roe', '>', 15, { roe: 1 }), true, '100% is allowed');
+  assert.equal(t('earn_yield', '>', 10, { pe: 0.5 }), null, 'an earnings yield of 200% is not real');
+  assert.equal(t('earn_yield', '>', 4.9, { pe: 20 }), true);
+  assert.equal(R.test({ field: 'pe_vs_sector', op: '<', value: 1 }, stock('B.NS', { sector: 'IT', fundamentals: { pe: 0.5 } }), { sectorPE: { IT: 20 } }), null);
+  const rule = R.clean({ conds: [{ field: 'pe', op: '<', value: 25 }] });
+  assert.deepEqual(R.run(rule, [stock('X.NS', { fundamentals: { pe: 0.5 } }), stock('Y.NS', { fundamentals: { pe: 12 } })], ctx), { matches: ['Y.NS'], noData: 1, notApplicable: 0 });
+});
+
+test('sector medians ignore a P/E under 2', () => {
+  const mk = (pe) => stock('S' + pe, { sector: 'IT', fundamentals: { pe } });
+  assert.deepEqual(R.sectorMedians([mk(0.4), mk(1.5), mk(10), mk(20), mk(30), mk(40)]), { IT: 25 });
+});

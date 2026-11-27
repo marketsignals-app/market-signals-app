@@ -1399,7 +1399,7 @@
     const rs = (s.indicators || {}).rs126;
     if (isNum(rs)) cards.push({ label: 'Vs index', value: signed(rs, 1, ' pts'), tone: rs > 0 ? 'up' : rs < 0 ? 'down' : '', text: '6 months', hint: `${rs >= 0 ? 'Ahead of' : 'Behind'} the index by ${Math.abs(rs).toFixed(1)} percentage points over 6 months` });
     const pe = (s.fundamentals || {}).pe, median = (ruleContext().sectorPE || {})[s.sector];
-    if (isNum(pe) && pe > 0 && median) cards.push({ label: 'P/E vs sector', value: `${(pe / median).toFixed(2)}×`, tone: '', text: `${pe.toFixed(1)} vs ${median.toFixed(1)}`, hint: `P/E ${pe.toFixed(1)} against a sector median of ${median.toFixed(1)}` });
+    if (isNum(pe) && pe >= Rules.MIN_PE && median) cards.push({ label: 'P/E vs sector', value: `${(pe / median).toFixed(2)}×`, tone: '', text: `${pe.toFixed(1)} vs ${median.toFixed(1)}`, hint: `P/E ${pe.toFixed(1)} against a sector median of ${median.toFixed(1)}` });
     if (!cards.length) return null;
     return h('div', { class: 'insightbox' },
       h('div', { class: 'insights', role: 'list', 'aria-label': 'Results at a glance' }, cards.map((c) => h('div', { class: 'insight', role: 'listitem', title: c.hint || '' },
@@ -2597,7 +2597,7 @@
   function countText(rule) {
     const r = countFor(rule);
     if (!r) return 'Counting...';
-    const left = [r.noData ? `${r.noData} could not be checked for lack of data` : '', r.notApplicable ? `${r.notApplicable} banks and lenders skipped: this figure does not apply to them` : ''].filter(Boolean);
+    const left = [r.noData ? `${r.noData} could not be checked for lack of a usable figure` : '', r.notApplicable ? `${r.notApplicable} banks and lenders skipped: this figure does not apply to them` : ''].filter(Boolean);
     return `${r.matches.length} stocks match now` + (left.length ? ` (${left.join('; ')})` : '');
   }
   function updateAlertCounts() {
@@ -2768,7 +2768,7 @@
         return (x < y ? -1 : x > y ? 1 : 0) * sortKey.dir;
       });
       const visible = rows;                                  // every stock that falls under the rule is listed, however many
-      const left = [res && res.noData ? `${res.noData} could not be checked for lack of data` : '', res && res.notApplicable ? `${res.notApplicable} banks and lenders skipped: this figure does not apply to them` : ''].filter(Boolean);
+      const left = [res && res.noData ? `${res.noData} could not be checked for lack of a usable figure` : '', res && res.notApplicable ? `${res.notApplicable} banks and lenders skipped: this figure does not apply to them` : ''].filter(Boolean);
 
       parts.push(h('div', { class: 'card al-rule' + (rule.on ? '' : ' off') },
         h('div', { class: 'al-top' }, h('strong', null, rule.name), switchEl(rule.on, rule.on ? 'Alerts on' : 'Alerts off', (e) => { rule.on = e.target.checked; saveRules(); if (rule.on) delete AL.matched[rule.id]; checkAlerts(); render(); })),

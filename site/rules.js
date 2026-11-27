@@ -18,6 +18,11 @@
   const risk = (s) => s.risk || {};
   const pct = (x) => (num(x) !== null ? x * 100 : null);
   const positive = (x) => (num(x) !== null && x > 0 ? x : null);
+  /* Sanity limits. Yahoo's trailing figures can come from a one-off profit, so a P/E under 2 (24 stocks of about 2,200) or a return on equity over 100% (6 stocks) is
+     almost always a distortion, not a real bargain. Such a figure is treated as missing, so a rule never matches on it and the stock is counted as "could not be checked". */
+  const MIN_PE = 2, MAX_ROE = 1;
+  const saneRoe = (x) => (num(x) !== null && x <= MAX_ROE ? x : null);
+  const sanePe = (x) => (num(x) !== null && x >= MIN_PE ? x : null);
 
   /* deep: the value comes from the indicator file of the other stocks, which the app loads on demand. */
   const NUMBERS = {
@@ -27,7 +32,7 @@
     from_low: ['Above 52-week low (%)', 'Price', (s) => gap(s.price, ind(s).lo252)],
     volume_ratio: ['Volume against its 3-month average (times)', 'Price', (s) => (num(s.volume) !== null && num(s.avg_volume) ? s.volume / s.avg_volume : null)],
     cap_cr: ['Market cap (Rs crore)', 'Value', (s) => (num(fund(s).market_cap) !== null && /\.NS$/.test(s.symbol || '') ? fund(s).market_cap / 1e7 : null)],
-    pe: ['P/E', 'Value', (s) => num(fund(s).pe)],
+    pe: ['P/E', 'Value', (s) => sanePe(fund(s).pe)],
     pb: ['P/B', 'Value', (s) => num(fund(s).pb)],
     dividend_yield: ['Dividend yield (%)', 'Value', (s) => (num(s.dividend_yield) !== null ? s.dividend_yield * 100 : null)],
     score_short: ['Weeks-view score', 'Readings', (s) => num((s.short || {}).score)],
@@ -37,7 +42,7 @@
     vs_sma50: ['Price above 50-day average (%)', 'Technical', (s) => gap(s.price, ind(s).sma50), true],
     vs_sma200: ['Price above 200-day average (%)', 'Technical', (s) => gap(s.price, ind(s).sma200), true],
     momentum: ['6-month return (%)', 'Technical', (s) => (num(ind(s).momentum126) !== null ? ind(s).momentum126 * 100 : null), true],
-    roe: ['Return on equity, ROE (%)', 'Quality', (s) => pct(fund(s).roe), true],
+    roe: ['Return on equity, ROE (%)', 'Quality', (s) => pct(saneRoe(fund(s).roe)), true],
     roa: ['Return on assets (%)', 'Quality', (s) => pct(fund(s).roa), true],
     op_margin: ['Operating margin (%)', 'Quality', (s) => pct(fund(s).operating_margin), true, 1],
     gross_margin: ['Gross margin (%)', 'Quality', (s) => pct(fund(s).gross_margin), true, 1],
@@ -55,10 +60,10 @@
     peg: ['PEG ratio', 'Value', (s) => positive(fund(s).peg), true],
     ev_ebitda: ['EV / EBITDA, latest year (times)', 'Value', (s) => positive(calc(s).ev_ebitda), true, 1],
     price_fcf: ['Price to free cash flow (times)', 'Value', (s) => num(calc(s).price_to_fcf), true, 1],
-    earn_yield: ['Earnings yield, 100 / P/E (%)', 'Value', (s) => (positive(fund(s).pe) !== null ? 100 / fund(s).pe : null)],
+    earn_yield: ['Earnings yield, 100 / P/E (%)', 'Value', (s) => (sanePe(fund(s).pe) !== null ? 100 / fund(s).pe : null)],
     pe_vs_sector: ['P/E against the sector median (times)', 'Value', (s, ctx) => {
       const median = ctx && ctx.sectorPE && ctx.sectorPE[s.sector];
-      return positive(fund(s).pe) !== null && median ? fund(s).pe / median : null;
+      return sanePe(fund(s).pe) !== null && median ? fund(s).pe / median : null;
     }, false, 2],
     sma_cross: ['50-day average above 200-day (%)', 'Technical', (s) => gap(ind(s).sma50, ind(s).sma200), true],
     adx: ['ADX, trend strength (14 days)', 'Technical', (s) => num(ind(s).adx), true],
@@ -133,8 +138,8 @@
   function sectorMedians(stocks) {
     const by = {};
     for (const s of stocks) {
-      const pe = num(fund(s).pe);
-      if (s.sector && s.sector !== 'Other' && pe !== null && pe > 0) (by[s.sector] = by[s.sector] || []).push(pe);
+      const pe = sanePe(fund(s).pe);
+      if (s.sector && s.sector !== 'Other' && pe !== null) (by[s.sector] = by[s.sector] || []).push(pe);
     }
     const out = {};
     for (const [sector, list] of Object.entries(by)) {
@@ -279,7 +284,7 @@
     } catch (e) { return null; }
   }
 
-  const api = { NUMBER_OPS, ENUM_OPS, MAX_CONDITIONS, MAX_RULES, TYPES, fields, test, inScope, run, needsDeep, clean, describe, newMatches, defaultPrefs, typeAlerts, rangeAlerts, sideOf, packSettings, unpackSettings, sectorMedians };
+  const api = { NUMBER_OPS, ENUM_OPS, MAX_CONDITIONS, MAX_RULES, TYPES, fields, test, inScope, run, needsDeep, clean, describe, newMatches, defaultPrefs, typeAlerts, rangeAlerts, sideOf, packSettings, unpackSettings, sectorMedians, MIN_PE, MAX_ROE };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Rules = api;
 }(typeof window !== 'undefined' ? window : globalThis));
