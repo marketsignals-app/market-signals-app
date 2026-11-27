@@ -592,9 +592,8 @@ ul.clean.multicol > li { break-inside: avoid; }
 .grid.tiles { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
 .al.alwide { max-width: none; }
 .alwide > h2, .alwide > p, .alwide > .al-how { max-width: 760px; }
-.alblocks { display: grid; gap: 0 20px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); align-items: start; }
+.alblocks { display: grid; gap: 0 20px; grid-template-columns: minmax(0, 1fr); align-items: start; }
 .alblock { min-width: 0; }
-.alblock.alfull { grid-column: 1 / -1; }
 .alertlog { column-width: 340px; column-gap: 24px; column-rule: 1px solid var(--line); }
 .alertlog li { break-inside: avoid; }
 @media (max-width: 520px) { .grid.tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } .grid.tiles > .card { padding: 8px 10px; } .cardgrid { grid-template-columns: minmax(0, 1fr); } }
@@ -611,3 +610,17 @@ ul.clean.multicol > li { break-inside: avoid; }
   .newsstory { padding-top: 4px; padding-bottom: 4px; }
 }
 .alertlog { display: block; }
+
+/* Alerts tab: the rules and settings stack in a narrow column on the left; the watchlist switches take the rest of the width in as many columns as fit; the triggered list runs underneath */
+.al-groups { display: grid; gap: 0 24px; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); align-items: start; }
+.al-groups .al-group { margin-top: 14px; }
+@media (min-width: 900px) {
+  .alblocks { grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); grid-template-areas: "rules watch" "settings watch" "trig trig"; }
+  .alblocks > .alblock:nth-child(1) { grid-area: rules; }
+  .alblocks > .alblock:nth-child(2) { grid-area: watch; }
+  .alblocks > .alblock:nth-child(3) { grid-area: settings; }
+  .alblocks > .alblock:nth-child(4) { grid-area: trig; }
+}
+@media (max-width: 520px) { .al-groups .switch { min-height: 32px; } .al-groups .al-group { margin-top: 8px; } }
+
+.outbar.progress .ok { background: var(--accent); }

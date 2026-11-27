@@ -2469,30 +2469,35 @@
   /* The headline: what share of settled readings succeeded, or how far off a trustworthy figure still is. */
   function scoreboard(t, min) {
     const o = t.overall || { n: 0 };
-    if (!o.n) {
-      const done = t.resolved || 0;
+    if (!o.n || !o.reliable) {                      // under the minimum a rate swings too much (1 settled reading is "0%" or "100%"): show the count and what happened, not a rate
+      const done = o.n || t.resolved || 0;
+      const counts = o.n ? [['target_pct', 'reached the reference level'], ['stop_pct', 'reached the risk level'], ['expired_pct', 'ran out of time']]
+        .map(([key, text]) => [Math.round((o[key] || 0) * o.n / 100), text]).filter(([n]) => n > 0).map(([n, text]) => `${n} ${text}`).join(', ') : '';
       return h('section', { class: 'card score' },
         h('div', { class: 'scoretitle' }, 'Too early for a success rate'),
         h('div', { class: 'big' }, String(done), h('span', { class: 'bigof' }, ` of ${min} readings settled`)),
-        h('div', { class: 'outbar tall', role: 'img', 'aria-label': `${done} of ${min} readings settled` }, h('i', { class: 'ok', style: `flex:${Math.max(done, 0.001)}` }), h('i', { class: 'blank', style: `flex:${Math.max(min - done, 0)}` })),
+        h('div', { class: 'outbar tall progress', role: 'img', 'aria-label': `${done} of ${min} readings settled` }, h('i', { class: 'ok', style: `flex:${Math.max(done, 0.001)}` }), h('i', { class: 'blank', style: `flex:${Math.max(min - done, 0)}` })),
+        counts ? h('p', { class: 'small', style: 'margin:8px 0 0' }, `So far ${counts}${isNum(o.avg_return) ? `, with an average move of ${signed(o.avg_return)}` : ''}. One or two results say nothing about how often the readings work.`) : null,
         h('p', { class: 'small', style: 'margin:8px 0 0' }, `${t.open || 0} readings are open. One settles when its price reaches the reference level (success), reaches the risk level (failure) or runs out of time. The success rate appears once ${min} have settled; before that, any figure would be too unreliable to trust.`));
     }
     const move = isNum(o.avg_return) ? h('span', { class: o.avg_return >= 0 ? 'up' : 'down' }, `${signed(o.avg_return)} average move`) : null;
     const excess = isNum(o.avg_excess) ? h('span', { class: o.avg_excess >= 0 ? 'up' : 'down' }, `${signed(o.avg_excess)} against the index`) : null;
     return h('section', { class: 'card score' },
-      h('div', { class: 'scoretitle' }, 'Success rate of settled readings', o.reliable ? null : h('span', { class: 'tag warn' }, 'early figure')),
+      h('div', { class: 'scoretitle' }, 'Success rate of settled readings'),
       h('div', { class: 'big' }, pct0(o.target_pct), h('span', { class: 'bigof' }, ` of ${o.n} reached the reference level first`)),
       outcomeBar(o, true), outcomeLegend(o),
-      h('div', { class: 'moves small' }, move, excess),
-      o.reliable ? null : h('p', { class: 'muted small', style: 'margin:6px 0 0' }, `Only ${o.n} readings have settled. With fewer than ${min} the rate can swing a lot, so treat it as a first look.`));
+      h('div', { class: 'moves small' }, move, excess));
   }
 
   function groupCards(t) {
     const entries = Object.entries(t.by_group || {}).filter(([, g]) => g.n > 0);
     if (!entries.length) return null;
-    return [h('h3', null, 'By reading type'), h('div', { class: 'tgroups' }, entries.map(([label, g]) => h('div', { class: 'card tgroup' },
-      h('div', { class: 'small muted' }, label), h('div', { class: 'gbig' }, pct0(g.target_pct), g.reliable ? null : h('span', { class: 'tag warn' }, 'few')),
-      outcomeBar(g, false), h('div', { class: 'small muted' }, `${g.n} settled`, isNum(g.avg_return) ? ` \u00B7 ${signed(g.avg_return)} average move` : ''))))];
+    const card = (label, g) => (g.reliable
+      ? h('div', { class: 'card tgroup' }, h('div', { class: 'small muted' }, label), h('div', { class: 'gbig' }, pct0(g.target_pct)),
+        outcomeBar(g, false), h('div', { class: 'small muted' }, `${g.n} settled`, isNum(g.avg_return) ? ` · ${signed(g.avg_return)} average move` : ''))
+      : h('div', { class: 'card tgroup' }, h('div', { class: 'small muted' }, label), h('div', { class: 'gbig' }, `${g.n} settled `, h('span', { class: 'tag warn' }, 'too few to rate')),
+        h('div', { class: 'small muted' }, isNum(g.avg_return) ? `${signed(g.avg_return)} average move so far` : 'no rate until more settle')));
+    return [h('h3', null, 'By reading type'), h('div', { class: 'tgroups' }, entries.map(([label, g]) => card(label, g)))];
   }
 
   function viewTrack() {
@@ -2843,8 +2848,8 @@
       h('details', { class: 'card al-types', open: S.watch.size > 0 && onCount < Rules.TYPES.length },
         h('summary', null, h('span', null, S.watch.size ? `${S.watch.size} stocks on your watchlist` : 'Your watchlist is empty'), h('span', { class: 'muted small' }, `${onCount} of ${Rules.TYPES.length} on`)),
         h('p', { class: 'muted small' }, S.watch.size ? 'Choose what to be told about. Tap the star next to a stock to add or remove it.' : 'Tap the star next to a stock to add it. These alerts only cover stocks on your watchlist.'),
-        typeGroups.map((g) => h('div', { class: 'al-group' }, h('strong', null, g),
-          Rules.TYPES.filter((t) => t.group === g).map((t) => switchEl(AL.prefs[t.key], t.label, (e) => { AL.prefs[t.key] = e.target.checked; savePrefs(); })))),
+        h('div', { class: 'al-groups' }, typeGroups.map((g) => h('div', { class: 'al-group' }, h('strong', null, g),
+          Rules.TYPES.filter((t) => t.group === g).map((t) => switchEl(AL.prefs[t.key], t.label, (e) => { AL.prefs[t.key] = e.target.checked; savePrefs(); }))))),
         h('div', { class: 'al-actions' }, h('button', { type: 'button', class: 'linkbtn', onclick: () => setAll(true) }, 'Turn all on'), h('button', { type: 'button', class: 'linkbtn', onclick: () => setAll(false) }, 'Turn all off')))),
       h('div', { class: 'alblock' }, alSection('Settings'), backupCard()),
 
