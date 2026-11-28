@@ -199,7 +199,14 @@ At the top of a stock's page: a **day range** bar (the newest candle: the day so
 
 **Peer ratio table** (Fundamentals tab): this stock and its seven largest same-sector peers from the list, with market cap (Rs crore), P/E, P/B, ROE, an approximate ROCE, EV/EBITDA and debt to equity, and a **sector median** row over every stock of the sector in the list (at least three figures needed). The figures are the same ones the alert rules use. Banks and lenders show n/a for debt, EBITDA and ROCE, and a column that is n/a for every row is left out. Nothing is ranked or coloured as better or worse.
 
-**Track record, early on:** until 30 readings have settled the tab shows no success rate. With one settled reading a rate is "0%" or "100%", which says nothing, so it shows "1 of 30 readings settled" in a neutral progress bar, what happened in words (for example "1 reached the risk level, average move -8.55%"), and a note that one or two results say nothing about how often the readings work. Each reading type shows "1 settled, too few to rate" instead of a percentage. From 30 settled, the success, failure and expired shares appear as before.
+**Track record tab:** one page that answers "how have the readings actually turned out?".
+- **Filters** at the top: reading (weeks view or months-to-years view), direction (bullish or bearish) and, for the settled table, the result (success, failure, expired). They change the figures, the verdict and both tables; "Clear filters" resets them.
+- **Six figures:** readings recorded, settled, still open, success rate, average move and the move against the index. The success rate shows as "Not yet" until 30 readings have settled (one reading would read 0% or 100%), and from then on comes with its 95% range, which says how uncertain it still is.
+- **A plain verdict** under the figures: "Too early to judge: only 1 of the 30 readings needed have settled" with what happened so far, or, once there are enough, the success, failure and expired counts with the range and the average move.
+- **Open readings** (the part that can be judged from day one): each unsettled reading with its price when given, its price now, the move so far, the distance still to go to the reference level, a bar from the risk level to the reference level with the starting price and today's price marked, the days used out of 20 or 120, and a standing (in favour, against it, flat). "Now" is the price the app holds, so it follows the data refresh.
+- **Settled readings:** stock, reading, given and settled dates, price then, reference and risk levels, the result, the move and the days held.
+- **By reading type** always lists all four (weeks and months-to-years, bullish and bearish), including those with nothing settled; the weekly test on past prices is a separate, clearly labelled panel; the indicator breakdowns and a glossary sit under "More detail".
+- On a phone the tables become lists (one entry per reading with its bar); from 720 px they are tables with the stock name fixed at the left. The old line about the GitHub data branch is gone.
 
 ## Layout: glance first
 

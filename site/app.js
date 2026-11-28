@@ -1106,27 +1106,6 @@
       h('p', { class: 'muted small', style: 'margin:4px 0 0' }, `A description of the past, not a prediction or a recommendation. Learned ${readStamp(o.generated_at)} from ${o.universe} stocks (${(o.span || []).join(' to ')}). Only price and volume factors are learned: past fundamentals are not available point in time. Prices exclude costs and dividends, the stock list is today's, and market conditions change.`));
   }
 
-  function learningCard() {
-    const l = S.data.learning;
-    if (!l) return null;
-    const rows = OUTLOOK_HORIZONS.filter(([k]) => (l.validation || {})[k]).map(([k, label]) => {
-      const v = l.validation[k];
-      return h('tr', null, h('td', null, label), h('td', { class: 'num' }, pc((l.base_rates || {})[k])), h('td', { class: 'num hide-sm' }, isNum(v.tested) ? v.tested.toLocaleString() : '–'),
-        h('td', { class: 'num hide-sm' }, isNum(v.skill) ? `${(v.skill * 100).toFixed(2)}%` : '–'), h('td', null, h('span', { class: `tag ${v.edge ? 'buy' : ''}` }, v.edge ? 'Beat the base rate' : 'No reliable edge'), h('div', { class: 'muted small' }, v.reason || '')));
-    });
-    const c = l.scorecard || {};
-    return h('details', { class: 'card', open: true },
-      h('summary', null, h('b', null, 'What the app has learned '), h('span', { class: 'muted small' }, `from ${l.universe} stocks, ${(l.span || []).join(' to ')}, ${isNum(l.samples) ? l.samples.toLocaleString() : ''} situations, learned ${readStamp(l.generated_at)}`)),
-      h('p', { class: 'small' }, 'Every week the app re-learns how often the price was higher after each combination of trend, RSI, MACD, 52-week position and volatility, and tests that on the later 40% of the dates. A pattern is called an edge only if it beat the all-situations share there by a margin that matters with its whole range above zero.'),
-      h('div', { style: 'overflow-x:auto' }, h('table', null, h('thead', null, h('tr', null, h('th', null, 'Looking ahead'), h('th', { class: 'num' }, 'Price was higher (all situations)'), h('th', { class: 'num hide-sm' }, 'Later cases tested'), h('th', { class: 'num hide-sm' }, 'Error cut vs all-situations'), h('th', null, 'Result'))), h('tbody', null, rows))),
-      c.n ? h('div', null, h('h4', null, `Forecasts made and resolved so far (${c.n})`), h('p', { class: 'small' }, `Error score ${c.brier} against ${c.brier_base} for always saying the all-situations share${isNum(c.skill) ? ` (${c.skill > 0 ? '' : '+'}${(-c.skill * 100).toFixed(1)}% change)` : ''}. A band that came true as often as it said is well calibrated.`),
-        h('div', { style: 'overflow-x:auto' }, h('table', null, h('thead', null, h('tr', null, h('th', null, 'Said'), h('th', { class: 'num' }, 'Forecasts'), h('th', { class: 'num' }, 'Came true'))),
-          h('tbody', null, (c.bands || []).map((b) => h('tr', null, h('td', null, `${b.from_pct}% to ${b.to_pct}%`), h('td', { class: 'num' }, b.n), h('td', { class: 'num' }, `${b.came_true_pct}%`))))))) : h('p', { class: 'muted small' }, 'No forecast has reached its date yet, so there is no live accuracy figure. The first ones resolve after 20 trading days.'),
-      h('p', { class: 'muted small', style: 'margin-bottom:0' }, 'This describes the past. It does not change any reading, threshold or alert, and it is not tuned to beat buy-and-hold.'));
-  }
-
-
-
   /* ---------- news intelligence: sources, de-duplicated stories, sentiment, impact, reaction and validation ---------- */
   const TONE_CLASS = { Positive: 'buy', Negative: 'warn', Mixed: '', Neutral: '' };
   const INTERPRETATION_CLASS = { Bullish: 'buy', Bearish: 'warn', Mixed: '', Neutral: '' };
@@ -2422,35 +2401,6 @@
 
   /* ---------- track record tab ---------- */
   const SIDE_TEXT = { buy: 'bullish', sell: 'bearish', hold: 'mixed' };
-  const TERMS = [
-    ['Success', 'The price reached the reference level before the volatility risk level or the time limit. Shown as Reference reached in the tables.'],
-    ['Failure', 'The price reached the volatility risk level first. Shown as Risk level reached in the tables.'],
-    ['Expired', 'Neither level was reached within 20 trading days (weeks view) or 120 (months-to-years view).'],
-    ['Avg move', 'Average price move in the direction of the reading, after a 0.1% cost.'],
-    ['vs index', 'Average return minus what the market index did over the same days.'],
-  ];
-
-  function statRow(label, g, min) {
-    const range = (ci) => (ci ? ` (${ci[0].toFixed(0)}-${ci[1].toFixed(0)}%)` : '');
-    const unsure = !g.reliable;
-    return h('tr', { class: unsure ? 'unsure' : null },
-      h('td', null, label, unsure ? h('span', { class: 'tag warn', title: `Fewer than ${min} resolved readings: too few to trust` }, 'few readings') : null),
-      h('td', { class: 'num' }, String(g.n)),
-      h('td', { class: 'num' }, isNum(g.target_pct) ? `${g.target_pct.toFixed(0)}%${range(g.target_ci)}` : '–'),
-      h('td', { class: 'num' }, isNum(g.stop_pct) ? `${g.stop_pct.toFixed(0)}%` : '–'),
-      h('td', { class: 'num' }, isNum(g.expired_pct) ? `${g.expired_pct.toFixed(0)}%` : '–'),
-      h('td', { class: `num ${isNum(g.avg_return) ? (g.avg_return >= 0 ? 'up' : 'down') : ''}` }, signed(g.avg_return)),
-      h('td', { class: `num ${isNum(g.avg_excess) ? (g.avg_excess >= 0 ? 'up' : 'down') : ''}` }, signed(g.avg_excess)));
-  }
-
-  function statTable(title, groups, min) {
-    const entries = Object.entries(groups || {}).filter(([, g]) => g.n > 0);
-    if (!entries.length) return null;
-    return [h('h3', null, title), h('div', { class: 'card', style: 'padding:0;overflow-x:auto' }, h('table', null,
-      h('thead', null, h('tr', null, ['Group', 'Readings', 'Reference reached', 'Risk level reached', 'Expired', 'Avg move', 'vs index'].map((x, i) => h('th', { class: i ? 'num' : null }, x)))),
-      h('tbody', null, entries.map(([label, g]) => statRow(label, g, min)))))];
-  }
-
   /* One stacked bar: success (reference level reached first), failure (risk level reached first), expired. */
   function outcomeBar(g, tall) {
     const parts = [['ok', g.target_pct], ['bad', g.stop_pct], ['na', g.expired_pct]];
@@ -2466,81 +2416,202 @@
       h('span', null, h('i', { class: 'dot na' }), `Expired ${pct0(g.expired_pct)}`));
   }
 
-  /* The headline: what share of settled readings succeeded, or how far off a trustworthy figure still is. */
-  function scoreboard(t, min) {
-    const o = t.overall || { n: 0 };
-    if (!o.n || !o.reliable) {                      // under the minimum a rate swings too much (1 settled reading is "0%" or "100%"): show the count and what happened, not a rate
-      const done = o.n || t.resolved || 0;
-      const counts = o.n ? [['target_pct', 'reached the reference level'], ['stop_pct', 'reached the risk level'], ['expired_pct', 'ran out of time']]
-        .map(([key, text]) => [Math.round((o[key] || 0) * o.n / 100), text]).filter(([n]) => n > 0).map(([n, text]) => `${n} ${text}`).join(', ') : '';
-      return h('section', { class: 'card score' },
-        h('div', { class: 'scoretitle' }, 'Too early for a success rate'),
-        h('div', { class: 'big' }, String(done), h('span', { class: 'bigof' }, ` of ${min} readings settled`)),
-        h('div', { class: 'outbar tall progress', role: 'img', 'aria-label': `${done} of ${min} readings settled` }, h('i', { class: 'ok', style: `flex:${Math.max(done, 0.001)}` }), h('i', { class: 'blank', style: `flex:${Math.max(min - done, 0)}` })),
-        counts ? h('p', { class: 'small', style: 'margin:8px 0 0' }, `So far ${counts}${isNum(o.avg_return) ? `, with an average move of ${signed(o.avg_return)}` : ''}. One or two results say nothing about how often the readings work.`) : null,
-        h('p', { class: 'small', style: 'margin:8px 0 0' }, `${t.open || 0} readings are open. One settles when its price reaches the reference level (success), reaches the risk level (failure) or runs out of time. The success rate appears once ${min} have settled; before that, any figure would be too unreliable to trust.`));
-    }
-    const move = isNum(o.avg_return) ? h('span', { class: o.avg_return >= 0 ? 'up' : 'down' }, `${signed(o.avg_return)} average move`) : null;
-    const excess = isNum(o.avg_excess) ? h('span', { class: o.avg_excess >= 0 ? 'up' : 'down' }, `${signed(o.avg_excess)} against the index`) : null;
-    return h('section', { class: 'card score' },
-      h('div', { class: 'scoretitle' }, 'Success rate of settled readings'),
-      h('div', { class: 'big' }, pct0(o.target_pct), h('span', { class: 'bigof' }, ` of ${o.n} reached the reference level first`)),
-      outcomeBar(o, true), outcomeLegend(o),
-      h('div', { class: 'moves small' }, move, excess));
+  const TERMS = [
+    ['Reading', 'A bullish or bearish call the app gave on a stock. It is saved with the price at the time, a reference level and a risk level.'],
+    ['Reference level', 'Where the reading expects the price to go. Reaching it first is a success.'],
+    ['Risk level', 'About two average daily ranges against the reading. Reaching it first means the reading was wrong: a failure.'],
+    ['Expired', 'Neither level was reached within 20 trading days (weeks view) or 120 (months-to-years view).'],
+    ['Average move', 'Average price move in the direction of the reading, after a 0.1% cost.'],
+    ['Against the index', 'Average move minus what the market index did over the same days, in percentage points.'],
+    ['95% range', 'With few readings a success rate is uncertain. The range is where the true rate probably lies; a wide range means too few readings to say.'],
+  ];
+
+  const TRACK_UI = { view: 'all', side: 'all', result: 'all' };
+  const groupOf = (label) => ({ view: /^Weeks/.test(label) ? 'short' : 'long', side: /bullish/.test(label) ? 'buy' : 'sell' });
+  const trackMatch = (view, side) => (TRACK_UI.view === 'all' || view === TRACK_UI.view) && (TRACK_UI.side === 'all' || side === TRACK_UI.side);
+
+  /* The settled readings of the chosen view and direction, added up from the four groups the engine publishes. */
+  function combineGroups(t) {
+    const parts = Object.entries(t.by_group || {}).filter(([label, g]) => { const m = groupOf(label); return g.n > 0 && trackMatch(m.view, m.side); }).map(([, g]) => g);
+    const n = parts.reduce((sum, g) => sum + g.n, 0);
+    const count = (key) => parts.reduce((sum, g) => sum + Math.round((g[key] || 0) * g.n / 100), 0);
+    const avg = (key) => (n ? parts.reduce((sum, g) => sum + (isNum(g[key]) ? g[key] * g.n : 0), 0) / n : null);
+    return { n, target: count('target_pct'), stop: count('stop_pct'), expired: count('expired_pct'), avg_return: avg('avg_return'), avg_excess: avg('avg_excess') };
+  }
+  function wilson(k, n) {        // the 95% range of a share k out of n (Wilson), in percent
+    const z = 1.96, p = k / n, d = 1 + z * z / n, centre = p + z * z / (2 * n), margin = z * Math.sqrt(p * (1 - p) / n + z * z / (4 * n * n));
+    return [Math.max(0, (centre - margin) / d) * 100, Math.min(1, (centre + margin) / d) * 100];
+  }
+  function tradingDaysSince(iso) {
+    const end = Date.parse(todayIso() + 'T00:00:00Z');
+    let n = 0;
+    for (let d = Date.parse(iso + 'T00:00:00Z') + 864e5; d <= end; d += 864e5) { const w = new Date(d).getUTCDay(); if (w !== 0 && w !== 6) n += 1; }
+    return n;
   }
 
-  function groupCards(t) {
-    const entries = Object.entries(t.by_group || {}).filter(([, g]) => g.n > 0);
-    if (!entries.length) return null;
-    const card = (label, g) => (g.reliable
-      ? h('div', { class: 'card tgroup' }, h('div', { class: 'small muted' }, label), h('div', { class: 'gbig' }, pct0(g.target_pct)),
-        outcomeBar(g, false), h('div', { class: 'small muted' }, `${g.n} settled`, isNum(g.avg_return) ? ` · ${signed(g.avg_return)} average move` : ''))
-      : h('div', { class: 'card tgroup' }, h('div', { class: 'small muted' }, label), h('div', { class: 'gbig' }, `${g.n} settled `, h('span', { class: 'tag warn' }, 'too few to rate')),
-        h('div', { class: 'small muted' }, isNum(g.avg_return) ? `${signed(g.avg_return)} average move so far` : 'no rate until more settle')));
-    return [h('h3', null, 'By reading type'), h('div', { class: 'tgroups' }, entries.map(([label, g]) => card(label, g)))];
+  const tile = (label, value, note, tone) => h('div', { class: 'ttile' }, h('span', { class: 'muted small' }, label), h('b', { class: tone || '' }, value), note ? h('span', { class: 'small muted' }, note) : null);
+  const chipGroup = (label, key, options) => h('div', { class: 'tfield' }, h('span', { class: 'muted small' }, label),
+    h('div', { class: 'chips-row' }, options.map(([value, text]) => h('button', { type: 'button', class: 'chip' + (TRACK_UI[key] === value ? ' on' : ''), 'aria-pressed': String(TRACK_UI[key] === value),
+      onclick: () => { TRACK_UI[key] = value; render(); } }, text))));
+
+  /* Where an open reading stands against the prices the app holds now: the bar runs from its risk level (left) to its reference level (right). */
+  function openStanding(c, rowOf) {
+    const row = rowOf.get(c.symbol), price = row && isNum(row.price) ? row.price : null;
+    const dir = c.side === 'buy' ? 1 : -1;
+    if (price === null) return { price: null };
+    const span = c.target - c.stop;
+    const progress = clamp((price - c.stop) / span, 0, 1), start = clamp((c.price - c.stop) / span, 0, 1);
+    const move = dir * (price / c.price - 1) * 100;
+    const state = progress <= 0 ? ['Risk level reached', 'sell'] : progress >= 1 ? ['Reference reached', 'buy'] : move > 0.05 ? ['In favour', 'buy'] : move < -0.05 ? ['Against it', 'sell'] : ['Flat', ''];
+    return { price, move, progress, start, state, toTarget: Math.abs(c.target / price - 1) * 100, toStop: Math.abs(c.stop / price - 1) * 100 };
+  }
+  const progressBar = (st) => h('span', { class: 'pbar', role: 'img', 'aria-label': `${Math.round(st.progress * 100)} percent of the way from the risk level to the reference level` },
+    h('b', { style: `left:${st.start * 100}%`, title: 'Price when the reading was given' }), h('i', { style: `left:${st.progress * 100}%`, title: 'Price now' }));
+
+  function trackTable(heads, rows, cls) {
+    return h('div', { class: 'peerwrap' }, h('table', { class: 'peertable ttable ' + (cls || '') },
+      h('thead', null, h('tr', null, heads.map(([label, num, hide]) => h('th', { class: [num ? 'num' : '', hide ? 'hide-sm' : ''].join(' ').trim() || null }, label)))), h('tbody', null, rows)));
+  }
+  const nameCell = (r) => h('td', null, h('b', { class: 'tname' }, r.name || r.symbol), h('div', { class: 'muted small' }, r.symbol.replace(/\.NS$/, '')));
+  const viewDir = (r) => `${r.horizon === 'short' ? 'Weeks' : 'Months+'} · ${r.side === 'buy' ? 'bullish' : 'bearish'}`;
+
+  function openSection(t, openAll, rowOf) {
+    if (!openAll.length) return h('p', { class: 'muted small' }, 'No open reading matches these filters.');
+    const expiry = t.expiry_days || { short: 20, long: 120 };
+    const ordered = openAll.slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : (a.name || '').localeCompare(b.name || '')));
+    const calc = ordered.map((c) => ({ c, st: openStanding(c, rowOf), days: tradingDaysSince(c.date) }));
+    const stateTag = (st) => (st.price === null ? h('span', { class: 'muted small' }, 'no price') : h('span', { class: `tag ${st.state[1]}` }, st.state[0]));
+    const table = trackTable([['Stock'], ['Reading'], ['Given'], ['Price then', true], ['Price now', true], ['Move so far', true], ['Needs to reach', true, true], ['Position'], ['Days', true], ['Standing']],
+      calc.map(({ c, st, days }) => h('tr', null, nameCell(c), h('td', null, viewDir(c)), h('td', null, shortDay(c.date)), h('td', { class: 'num' }, money(c.price, c.currency)),
+        h('td', { class: 'num' }, st.price === null ? '–' : money(st.price, c.currency)), h('td', { class: 'num ' + (st.move > 0 ? 'up' : st.move < 0 ? 'down' : '') }, st.price === null ? '–' : signed(st.move, 1)),
+        h('td', { class: 'num hide-sm' }, st.price === null ? '–' : `${money(c.target, c.currency)} (${st.toTarget.toFixed(1)}% away)`),
+        h('td', null, st.price === null ? '–' : progressBar(st)), h('td', { class: 'num' }, `${days} of ${expiry[c.horizon] || '–'}`), h('td', null, stateTag(st)))), 'tbl-wide');
+    const list = h('ul', { class: 'tlist' }, calc.map(({ c, st, days }) => h('li', { class: 'trow' },
+      h('div', { class: 'trow-top' }, h('b', { class: 'tname' }, c.name || c.symbol), stateTag(st)),
+      h('div', { class: 'muted small' }, `${c.symbol.replace(/\.NS$/, '')} · ${viewDir(c)} · given ${shortDay(c.date)} · day ${days} of ${expiry[c.horizon] || '–'}`),
+      st.price === null ? null : h('div', { class: 'trow-bar' }, progressBar(st), h('span', { class: 'small ' + (st.move > 0 ? 'up' : st.move < 0 ? 'down' : '') }, `${signed(st.move, 1)} so far`)),
+      st.price === null ? null : h('div', { class: 'small muted' }, `${money(c.price, c.currency)} then, ${money(st.price, c.currency)} now. Reference level ${money(c.target, c.currency)} (${st.toTarget.toFixed(1)}% away), risk level ${money(c.stop, c.currency)} (${st.toStop.toFixed(1)}% away).`))));
+    return [h('div', { class: 'tview-table' }, table), h('div', { class: 'tview-list' }, list)];
+  }
+
+  function settledSection(settled) {
+    if (!settled.length) return h('p', { class: 'muted small' }, TRACK_UI.result === 'all' && TRACK_UI.view === 'all' && TRACK_UI.side === 'all' ? 'No reading has settled yet.' : 'No settled reading matches these filters.');
+    const word = { target: ['Success', 'buy'], stop: ['Failure', 'sell'], expired: ['Expired', ''] };
+    const ordered = settled.slice().sort((a, b) => (a.resolved_date < b.resolved_date ? 1 : -1));
+    const chip = (r) => h('span', { class: `tag ${(word[r.outcome] || ['', ''])[1]}` }, (word[r.outcome] || [r.outcome])[0]);
+    const table = trackTable([['Stock'], ['Reading'], ['Given'], ['Settled'], ['Price then', true], ['Reference level', true, true], ['Risk level', true, true], ['Result'], ['Move', true], ['Days', true]],
+      ordered.map((r) => h('tr', null, nameCell(r), h('td', null, viewDir(r)), h('td', null, shortDay(r.date)), h('td', null, shortDay(r.resolved_date)), h('td', { class: 'num' }, money(r.price, r.currency)),
+        h('td', { class: 'num hide-sm' }, money(r.target, r.currency)), h('td', { class: 'num hide-sm' }, money(r.stop, r.currency)), h('td', null, chip(r)),
+        h('td', { class: 'num ' + (r.return_pct >= 0 ? 'up' : 'down') }, signed(r.return_pct, 2)), h('td', { class: 'num' }, isNum(r.days_held) ? String(r.days_held) : '–'))), 'tbl-wide');
+    const list = h('ul', { class: 'tlist' }, ordered.map((r) => h('li', { class: 'trow' },
+      h('div', { class: 'trow-top' }, h('b', { class: 'tname' }, r.name || r.symbol), chip(r)),
+      h('div', { class: 'muted small' }, `${r.symbol.replace(/\.NS$/, '')} · ${viewDir(r)} · ${shortDay(r.date)} to ${shortDay(r.resolved_date)}${isNum(r.days_held) ? ` · ${r.days_held} day${r.days_held === 1 ? '' : 's'}` : ''}`),
+      h('div', { class: 'small' }, h('span', { class: r.return_pct >= 0 ? 'up' : 'down' }, `${signed(r.return_pct, 2)} move`), ` from ${money(r.price, r.currency)}; reference level ${money(r.target, r.currency)}, risk level ${money(r.stop, r.currency)}`))));
+    return [h('div', { class: 'tview-table' }, table), h('div', { class: 'tview-list' }, list)];
+  }
+
+  /* All four reading types, even those with nothing settled yet, so it is clear what is being measured. */
+  function breakdownTable(t, min) {
+    const openBy = {};
+    for (const c of t.open_calls || []) { const key = `${HORIZON_LABEL[c.horizon] || c.horizon}, ${c.side === 'buy' ? 'bullish' : 'bearish'}`; openBy[key] = (openBy[key] || 0) + 1; }
+    const rows = ['Weeks view, bullish', 'Weeks view, bearish', 'Months-to-years view, bullish', 'Months-to-years view, bearish'].map((label) => {
+      const g = (t.by_group || {})[label] || { n: 0 };
+      const cell = (key) => (g.n ? `${pct0(g[key])}` : '–');
+      return h('tr', { class: g.n && !g.reliable ? 'unsure' : null }, h('td', null, h('b', null, label)), h('td', { class: 'num' }, String(g.n || 0)), h('td', { class: 'num' }, String(openBy[label] || 0)),
+        h('td', { class: 'num' }, g.n && !g.reliable ? h('span', { class: 'muted' }, `${cell('target_pct')} (few)`) : cell('target_pct')), h('td', { class: 'num' }, cell('stop_pct')), h('td', { class: 'num' }, cell('expired_pct')),
+        h('td', { class: 'num ' + (g.avg_return > 0 ? 'up' : g.avg_return < 0 ? 'down' : '') }, g.n && isNum(g.avg_return) ? signed(g.avg_return, 2) : '–'));
+    });
+    return trackTable([['Reading type'], ['Settled', true], ['Open', true], ['Success', true], ['Failure', true], ['Expired', true], ['Avg move', true]], rows);
+  }
+  const HORIZON_LABEL = { short: 'Weeks view', long: 'Months-to-years view' };
+
+  function detailTables(t, min) {
+    const band = Object.entries(t.by_score_band || {}).filter(([, g]) => g.n > 0);
+    const market = Object.entries(t.by_market || {}).filter(([, g]) => g.n > 0);
+    const row = (label, g) => h('tr', { class: g.reliable ? null : 'unsure' }, h('td', null, label), h('td', { class: 'num' }, String(g.n)), h('td', { class: 'num' }, pct0(g.target_pct)), h('td', { class: 'num' }, pct0(g.stop_pct)),
+      h('td', { class: 'num' }, pct0(g.expired_pct)), h('td', { class: 'num' }, isNum(g.avg_return) ? signed(g.avg_return, 2) : '–'), h('td', { class: 'num' }, isNum(g.avg_excess) ? signed(g.avg_excess, 2) : '–'));
+    const heads = (first) => [[first], ['Settled', true], ['Success', true], ['Failure', true], ['Expired', true], ['Avg move', true], ['Vs index', true]];
+    const comps = (t.components || []).filter((c) => c.comparable);
+    const parts = [];
+    if (band.length) parts.push(h('h4', null, 'By indicator alignment'), trackTable(heads('Alignment'), band.map(([label, g]) => row(label, g))));
+    if (market.length) parts.push(h('h4', null, 'By market'), trackTable(heads('Market'), market.map(([label, g]) => row(label, g))));
+    if (comps.length) parts.push(h('h4', null, 'Which indicators lined up with the outcome'), trackTable([['Indicator'], ['Supported', true], ['Avg move', true], ['Opposed', true], ['Avg move', true]],
+      comps.map((c) => h('tr', null, h('td', null, `${c.horizon === 'short' ? 'Weeks view' : 'Months-to-years view'}: ${c.component}`), h('td', { class: 'num' }, String(c.supporting.n)), h('td', { class: 'num' }, signed(c.supporting.avg_return)),
+        h('td', { class: 'num' }, String(c.against.n)), h('td', { class: 'num' }, signed(c.against.avg_return))))));
+    return parts.length ? parts : [h('p', { class: 'muted small' }, 'Nothing to break down yet.')];
+  }
+
+  /* The weekly test on past prices. Separate from the live results above: it says whether any pattern of indicators has ever predicted better than chance. */
+  function historyCard() {
+    const l = S.data.learning;
+    if (!l) return null;
+    const rows = OUTLOOK_HORIZONS.filter(([k]) => (l.validation || {})[k]).map(([k, label]) => {
+      const v = l.validation[k];
+      return h('tr', null, h('td', null, label), h('td', { class: 'num' }, pc((l.base_rates || {})[k])), h('td', { class: 'num hide-sm' }, isNum(v.tested) ? v.tested.toLocaleString() : '–'),
+        h('td', null, h('span', { class: `tag ${v.edge ? 'buy' : ''}` }, v.edge ? 'Beat the base rate' : 'No reliable edge')));
+    });
+    const anyEdge = OUTLOOK_HORIZONS.some(([k]) => ((l.validation || {})[k] || {}).edge);
+    return h('section', { class: 'card thistory' },
+      h('h3', { style: 'margin:0' }, 'What past prices say (a test, not live results)'),
+      h('p', { class: 'small' }, `Tested on ${l.universe} stocks from ${(l.span || []).map((d) => shortDay(d)).join(' to ')}, ${isNum(l.samples) ? l.samples.toLocaleString() : ''} situations. Each week the app checks whether any mix of trend, RSI, MACD, 52-week position and volatility predicted a higher price better than just assuming the usual share, on the later 40% of dates it had not seen.`),
+      trackTable([['Looking ahead'], ['Price was higher, all situations', true], ['Tested on', true, true], ['Result']], rows),
+      h('p', { class: 'small', style: 'margin:8px 0 0' }, anyEdge ? 'At least one horizon beat the base rate on later data. See the table.' : 'No pattern beat the base rate at any horizon on the later data. So the readings describe what the indicators say today; nothing here shows they predict the price.'),
+      h('p', { class: 'muted small', style: 'margin:4px 0 0' }, 'This describes the past. It does not change any reading, threshold or alert, and it is not tuned to beat buy-and-hold.'));
   }
 
   function viewTrack() {
     const t = S.data.track_record;
     if (!t) {
       return h('div', null, h('h2', null, 'Track record'),
-        h('div', { class: 'empty' }, 'No track record yet. Every bullish or bearish alert is recorded with its reference level and volatility risk level, and checked against later prices. Results appear here once readings have resolved.'));
+        h('div', { class: 'empty' }, 'No track record yet. Every bullish or bearish alert is recorded with its reference level and volatility risk level, and checked against later prices. Results appear here once readings have settled.'));
     }
     const min = t.min_sample || 30;
-    const o = t.overall || { n: 0 };
-    const notes = (t.suggestions || []).map((s) => h('li', null, s.text, ' ', h('span', { class: 'muted small' }, s.evidence ? `(${s.evidence})` : '')));
-    const comps = (t.components || []).filter((c) => c.comparable);
-    const compRows = comps.map((c) => h('tr', null,
-      h('td', null, `${c.horizon === 'short' ? 'Weeks view' : 'Months-to-years view'}: ${c.component}`),
-      h('td', { class: 'num' }, `${c.supporting.n}`), h('td', { class: 'num' }, signed(c.supporting.avg_return)),
-      h('td', { class: 'num' }, `${c.against.n}`), h('td', { class: 'num' }, signed(c.against.avg_return))));
-    const recent = (t.recent || []).map((r) => h('tr', null,
-      h('td', { class: 'name' }, h('b', null, r.name || r.symbol), h('span', null, `${r.symbol}, ${r.horizon === 'short' ? 'weeks view' : 'months-to-years view'}, ${SIDE_TEXT[r.side] || r.side}`)),
-      h('td', null, h('span', { class: `tag ${r.outcome === 'target' ? 'buy' : r.outcome === 'stop' ? 'sell' : ''}` }, r.outcome === 'target' ? 'Success' : r.outcome === 'stop' ? 'Failure' : 'Expired')),
-      h('td', { class: `num ${r.return_pct >= 0 ? 'up' : 'down'}` }, signed(r.return_pct)),
-      h('td', { class: 'num' }, `${shortDay(r.date)} to ${shortDay(r.resolved_date)}`)));
-    const open = (t.open_calls || []).map((c) => h('tr', null,
-      h('td', { class: 'name' }, h('b', null, c.name || c.symbol), h('span', null, `${c.symbol}, ${c.horizon === 'short' ? 'weeks view' : 'months-to-years view'}, ${SIDE_TEXT[c.side] || c.side}, since ${shortDay(c.date)}`)),
-      h('td', { class: 'num' }, money(c.price, c.currency)), h('td', { class: 'num' }, money(c.target, c.currency)),
-      h('td', { class: 'num' }, money(c.stop, c.currency))));
-    const table = (heads, rows) => h('div', { class: 'card', style: 'padding:0;overflow-x:auto' }, h('table', null,
-      h('thead', null, h('tr', null, heads.map((x, i) => h('th', { class: i ? 'num' : null }, x)))), h('tbody', null, rows)));
-    const detail = [statTable('By indicator alignment', t.by_score_band, min), statTable('By market', t.by_market, min),
-      compRows.length ? [h('h3', null, 'Which indicators lined up with the outcome'), table(['Indicator', 'Readings it supported', 'Avg move', 'Readings it opposed', 'Avg move'], compRows)] : null,
-      h('h3', null, 'Ideas to review'), h('div', { class: 'card' }, notes.length ? h('ul', { class: 'clean' }, notes) : h('span', { class: 'muted' }, 'Nothing to suggest yet.'),
-        h('p', { class: 'muted small' }, 'These are observations for you to judge. The app never changes its own rules.')),
-      h('h3', null, 'What the words mean'), h('dl', { class: 'terms' }, TERMS.map(([k, v]) => [h('dt', null, h('b', null, k)), h('dd', null, v)]))];
-    return h('div', null,
+    const s = combineGroups(t);
+    const rowOf = new Map(allStocks().map((x) => [x.symbol, x]));
+    const openAll = (t.open_calls || []).filter((c) => trackMatch(c.horizon, c.side));
+    const settled = (t.recent || []).filter((r) => trackMatch(r.horizon, r.side) && (TRACK_UI.result === 'all' || r.outcome === TRACK_UI.result));
+    const reliable = s.n >= min;
+    const rate = s.n ? (s.target / s.n) * 100 : null;
+    const range = s.n ? wilson(s.target, s.n) : null;
+    const filtered = TRACK_UI.view !== 'all' || TRACK_UI.side !== 'all';
+
+    const filters = h('div', { class: 'card tfilters' },
+      chipGroup('Reading', 'view', [['all', 'All'], ['short', 'Weeks view'], ['long', 'Months-to-years view']]),
+      chipGroup('Direction', 'side', [['all', 'All'], ['buy', 'Bullish'], ['sell', 'Bearish']]),
+      chipGroup('Settled result', 'result', [['all', 'All'], ['target', 'Success'], ['stop', 'Failure'], ['expired', 'Expired']]),
+      filtered || TRACK_UI.result !== 'all' ? h('button', { type: 'button', class: 'linkbtn', onclick: () => { TRACK_UI.view = 'all'; TRACK_UI.side = 'all'; TRACK_UI.result = 'all'; render(); } }, 'Clear filters') : null);
+
+    const tiles = h('div', { class: 'ttiles' },
+      tile('Readings recorded', String(s.n + openAll.length), filtered ? 'with these filters' : (t.older_model_calls ? `${t.older_model_calls} more from older rules are kept, not counted` : null)),
+      tile('Settled', `${s.n}`, reliable ? 'enough to rate' : `of ${min} needed to rate`),
+      tile('Still open', String(openAll.length), 'not yet at either level'),
+      tile('Success rate', reliable ? pct0(rate) : 'Not yet', reliable ? `95% range ${range[0].toFixed(0)} to ${range[1].toFixed(0)}%` : 'needs more settled readings', reliable ? '' : 'muted'),
+      tile('Average move', isNum(s.avg_return) ? signed(s.avg_return, 2) : '–', 'in the reading’s direction', s.avg_return > 0 ? 'up' : s.avg_return < 0 ? 'down' : ''),
+      tile('Against the index', isNum(s.avg_excess) ? signed(s.avg_excess, 2, ' pts') : '–', 'average move minus the index', s.avg_excess > 0 ? 'up' : s.avg_excess < 0 ? 'down' : ''));
+
+    const parts = [`${s.target} reached the reference level`, `${s.stop} reached the risk level`, `${s.expired} expired`].filter((x) => !x.startsWith('0 '));
+    const verdict = h('div', { class: 'card tverdict' + (reliable ? '' : ' early') },
+      h('strong', null, reliable ? `Of ${s.n} settled readings, ${pct0(rate)} reached the reference level first.` : s.n ? `Too early to judge: only ${s.n} of the ${min} readings needed have settled.` : `Too early to judge: no reading has settled yet.`),
+      h('p', { class: 'small', style: 'margin:4px 0 0' }, reliable
+        ? `That is ${s.target} reached the reference level, ${s.stop} the risk level and ${s.expired} expired. The 95% range for the success rate is ${range[0].toFixed(0)} to ${range[1].toFixed(0)}%; the average move was ${signed(s.avg_return, 2)}, ${signed(s.avg_excess, 2, '')} points against the index.`
+        : `${s.n ? `So far ${parts.join(', ')}${isNum(s.avg_return) ? `, average move ${signed(s.avg_return, 2)}` : ''}. ` : ''}With so few results a rate would swing from 0% to 100% on one reading, so none is shown until ${min} have settled. Meanwhile the open readings below show how each one is doing today.`),
+      reliable ? [outcomeBar({ target_pct: rate, stop_pct: (s.stop / s.n) * 100, expired_pct: (s.expired / s.n) * 100 }, true), outcomeLegend({ target_pct: rate, stop_pct: (s.stop / s.n) * 100, expired_pct: (s.expired / s.n) * 100 })]
+        : h('div', { class: 'outbar tall progress', role: 'img', 'aria-label': `${s.n} of ${min} readings settled` }, h('i', { class: 'ok', style: `flex:${Math.max(s.n, 0.001)}` }), h('i', { class: 'blank', style: `flex:${Math.max(min - s.n, 0)}` })));
+
+    return h('div', { class: 'trk' },
       h('h2', null, 'Track record'),
-      learningCard(),
-      scoreboard(t, min),
-      h('p', { class: 'muted small' }, `${t.calls_total} readings recorded under the current rules: ${t.resolved} settled, ${t.open} open.${t.void ? ` ${t.void} more were set aside as not entered (the reference price never traded on the day of the alert), so they are neither successes nor failures.` : ''}${t.older_model_calls ? ` ${t.older_model_calls} more from earlier versions of the rules are kept in the record but not counted here.` : ''} A past record, not a forecast.`),
-      groupCards(t),
-      recent.length ? [h('h3', null, 'Latest results'), table(['Reading', 'Result', 'Move', 'Dates'], recent)] : null,
-      open.length ? h('details', { class: 'card opencalls', open: !o.n }, h('summary', null, `Open readings (${t.open}${t.open > open.length ? `, latest ${open.length} listed` : ''})`),
-        h('div', { style: 'overflow-x:auto' }, h('table', null, h('thead', null, h('tr', null, ['Reading', 'Price', 'Reference level', 'Risk level'].map((x, i) => h('th', { class: i ? 'num' : null }, x)))), h('tbody', null, open)))) : null,
-      h('details', { class: 'card moredetail' }, h('summary', null, 'More detail'), detail),
-      t.data_url ? h('p', { class: 'muted small' }, 'Every reading and outcome is stored as plain files for anyone to check: ', h('a', { href: t.data_url, target: '_blank', rel: 'noopener' }, 'the data branch on GitHub'), '.') : null);
+      h('p', { class: 'muted' }, 'Every bullish or bearish reading the app gives is saved with a reference level (where the move is expected to go) and a risk level (where the reading has turned out wrong), then checked against later prices. This page shows how they have turned out, good or bad.'),
+      filters, tiles, verdict,
+      h('h3', { class: 'tsec' }, `Open readings (${openAll.length})`),
+      h('p', { class: 'muted small' }, 'Given, but not yet at either level. The bar runs from the risk level (left, red end) to the reference level (right, green end); the small mark is where the price was when the reading was given and the dot is where it is now. A reading expires after 20 trading days (weeks view) or 120 (months-to-years).'),
+      openSection(t, openAll, rowOf),
+      h('h3', { class: 'tsec' }, `Settled readings (${settled.length})`),
+      settledSection(settled),
+      h('h3', { class: 'tsec' }, 'By reading type'),
+      breakdownTable(t, min),
+      historyCard(),
+      h('details', { class: 'card moredetail' }, h('summary', null, 'More detail and what the words mean'), detailTables(t, min),
+        h('h4', null, 'What the words mean'), h('dl', { class: 'terms' }, TERMS.map(([k, v]) => [h('dt', null, h('b', null, k)), h('dd', null, v)]))));
   }
 
   /* ---------- shell ---------- */
