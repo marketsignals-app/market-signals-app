@@ -2420,7 +2420,8 @@
     ['Reading', 'A bullish or bearish call the app gave on a stock. It is saved with the price at the time, a reference level and a risk level.'],
     ['Reference level', 'Where the reading expects the price to go. Reaching it first is a success.'],
     ['Risk level', 'About two average daily ranges against the reading. Reaching it first means the reading was wrong: a failure.'],
-    ['Expired', 'Neither level was reached within 20 trading days (weeks view) or 120 (months-to-years view).'],
+    ['Expired', 'Neither level was reached within 20 trading days (weeks view, about 4 weeks) or 120 trading days (months-to-years view, about 6 months). The reading is closed at that day’s price and its move is counted from there.'],
+    ['Trading days', 'Days the market is open: Monday to Friday, without exchange holidays. The "ends by" date is therefore approximate and can fall a little later.'],
     ['Average move', 'Average price move in the direction of the reading, after a 0.1% cost.'],
     ['Against the index', 'Average move minus what the market index did over the same days, in percentage points.'],
     ['95% range', 'With few readings a success rate is uncertain. The range is where the true rate probably lies; a wide range means too few readings to say.'],
@@ -2447,6 +2448,12 @@
     let n = 0;
     for (let d = Date.parse(iso + 'T00:00:00Z') + 864e5; d <= end; d += 864e5) { const w = new Date(d).getUTCDay(); if (w !== 0 && w !== 6) n += 1; }
     return n;
+  }
+
+  function addTradingDays(iso, n) {      // weekends skipped; exchange holidays are not known here, so the date is "about"
+    let d = Date.parse(iso + 'T00:00:00Z'), left = n;
+    while (left > 0) { d += 864e5; const w = new Date(d).getUTCDay(); if (w !== 0 && w !== 6) left -= 1; }
+    return new Date(d).toISOString().slice(0, 10);
   }
 
   const tile = (label, value, note, tone) => h('div', { class: 'ttile' }, h('span', { class: 'muted small' }, label), h('b', { class: tone || '' }, value), note ? h('span', { class: 'small muted' }, note) : null);
@@ -2479,16 +2486,17 @@
     if (!openAll.length) return h('p', { class: 'muted small' }, 'No open reading matches these filters.');
     const expiry = t.expiry_days || { short: 20, long: 120 };
     const ordered = openAll.slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : (a.name || '').localeCompare(b.name || '')));
+    const endsBy = (c, ex) => (ex[c.horizon] ? `about ${shortDay(addTradingDays(c.date, ex[c.horizon]))}` : '–');
     const calc = ordered.map((c) => ({ c, st: openStanding(c, rowOf), days: tradingDaysSince(c.date) }));
     const stateTag = (st) => (st.price === null ? h('span', { class: 'muted small' }, 'no price') : h('span', { class: `tag ${st.state[1]}` }, st.state[0]));
-    const table = trackTable([['Stock'], ['Reading'], ['Given'], ['Price then', true], ['Price now', true], ['Move so far', true], ['Needs to reach', true, true], ['Position'], ['Days', true], ['Standing']],
+    const table = trackTable([['Stock'], ['Reading'], ['Given'], ['Price then', true], ['Price now', true], ['Move so far', true], ['Needs to reach', true, true], ['Position'], ['Day', true], ['Ends by', true], ['Standing']],
       calc.map(({ c, st, days }) => h('tr', null, nameCell(c), h('td', null, viewDir(c)), h('td', null, shortDay(c.date)), h('td', { class: 'num' }, money(c.price, c.currency)),
         h('td', { class: 'num' }, st.price === null ? '–' : money(st.price, c.currency)), h('td', { class: 'num ' + (st.move > 0 ? 'up' : st.move < 0 ? 'down' : '') }, st.price === null ? '–' : signed(st.move, 1)),
         h('td', { class: 'num hide-sm' }, st.price === null ? '–' : `${money(c.target, c.currency)} (${st.toTarget.toFixed(1)}% away)`),
-        h('td', null, st.price === null ? '–' : progressBar(st)), h('td', { class: 'num' }, `${days} of ${expiry[c.horizon] || '–'}`), h('td', null, stateTag(st)))), 'tbl-wide');
+        h('td', null, st.price === null ? '–' : progressBar(st)), h('td', { class: 'num' }, `${days} of ${expiry[c.horizon] || '–'}`), h('td', { class: 'num' }, endsBy(c, expiry)), h('td', null, stateTag(st)))), 'tbl-wide');
     const list = h('ul', { class: 'tlist' }, calc.map(({ c, st, days }) => h('li', { class: 'trow' },
       h('div', { class: 'trow-top' }, h('b', { class: 'tname' }, c.name || c.symbol), stateTag(st)),
-      h('div', { class: 'muted small' }, `${c.symbol.replace(/\.NS$/, '')} · ${viewDir(c)} · given ${shortDay(c.date)} · day ${days} of ${expiry[c.horizon] || '–'}`),
+      h('div', { class: 'muted small' }, `${c.symbol.replace(/\.NS$/, '')} · ${viewDir(c)} · given ${shortDay(c.date)} · day ${days} of ${expiry[c.horizon] || '–'}, ends by ${endsBy(c, expiry)}`),
       st.price === null ? null : h('div', { class: 'trow-bar' }, progressBar(st), h('span', { class: 'small ' + (st.move > 0 ? 'up' : st.move < 0 ? 'down' : '') }, `${signed(st.move, 1)} so far`)),
       st.price === null ? null : h('div', { class: 'small muted' }, `${money(c.price, c.currency)} then, ${money(st.price, c.currency)} now. Reference level ${money(c.target, c.currency)} (${st.toTarget.toFixed(1)}% away), risk level ${money(c.stop, c.currency)} (${st.toStop.toFixed(1)}% away).`))));
     return [h('div', { class: 'tview-table' }, table), h('div', { class: 'tview-list' }, list)];
@@ -2601,9 +2609,14 @@
     return h('div', { class: 'trk' },
       h('h2', null, 'Track record'),
       h('p', { class: 'muted' }, 'Every bullish or bearish reading the app gives is saved with a reference level (where the move is expected to go) and a risk level (where the reading has turned out wrong), then checked against later prices. This page shows how they have turned out, good or bad.'),
+      h('div', { class: 'card tends' }, h('strong', null, 'How a reading ends'),
+        h('ul', { class: 'tends-list' },
+          h('li', null, h('span', { class: 'tag buy' }, 'Success'), ' the price reaches the reference level first.'),
+          h('li', null, h('span', { class: 'tag sell' }, 'Failure'), ' the price reaches the risk level first.'),
+          h('li', null, h('span', { class: 'tag' }, 'Expired'), ' neither is reached in time: 20 trading days (about 4 weeks) for the weeks view, 120 (about 6 months) for months-to-years. It is closed at that day’s price.'))),
       filters, tiles, verdict,
       h('h3', { class: 'tsec' }, `Open readings (${openAll.length})`),
-      h('p', { class: 'muted small' }, 'Given, but not yet at either level. The bar runs from the risk level (left, red end) to the reference level (right, green end); the small mark is where the price was when the reading was given and the dot is where it is now. A reading expires after 20 trading days (weeks view) or 120 (months-to-years).'),
+      h('p', { class: 'muted small' }, 'Given, but not yet at either level. The bar runs from the risk level (left, red end) to the reference level (right, green end); the small mark is where the price was when the reading was given and the dot is where it is now. The "Day" column counts trading days used out of the limit (20 or 120), and "Ends by" is the approximate last day.'),
       openSection(t, openAll, rowOf),
       h('h3', { class: 'tsec' }, `Settled readings (${settled.length})`),
       settledSection(settled),

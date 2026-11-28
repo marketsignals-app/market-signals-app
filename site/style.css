@@ -654,3 +654,7 @@ ul.clean.multicol > li { break-inside: avoid; }
 .trow-bar .pbar { flex: 1 1 auto; width: auto; }
 .thistory { margin-top: 20px; }
 .thistory p { margin: 6px 0 0; }
+
+.tends { margin: 0 0 12px; }
+.tends-list { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; font-size: 14px; }
+@media (min-width: 900px) { .tends-list { grid-template-columns: repeat(3, 1fr); gap: 16px; } }
